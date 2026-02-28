@@ -39,6 +39,19 @@ console.log(
     idempotencyKey: "reply-001",
   }),
 );
+console.log(
+  await client.upsertWebhookSubscription({
+    callback_url: "https://integrator.example/webhooks/axme",
+    event_types: ["inbox.thread_created"],
+    active: true,
+  }),
+);
+console.log(
+  await client.publishWebhookEvent(
+    { event_type: "inbox.thread_created", source: "sdk-example", payload: { thread_id: "t-1" } },
+    { ownerAgent: "agent://example/receiver" },
+  ),
+);
 ```
 
 ## Development

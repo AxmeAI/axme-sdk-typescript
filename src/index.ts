@@ -5,6 +5,7 @@ export {
   type InboxChangesOptions,
   type OwnerScopedOptions,
   type ReplyInboxOptions,
+  type WebhookSubscriptionUpsertOptions,
 } from "./client.js";
 export {
   AxmeAuthError,
