@@ -23,6 +23,19 @@ const THREAD_PAYLOAD = {
   ],
 };
 
+const WEBHOOK_SUBSCRIPTION = {
+  subscription_id: "44444444-4444-4444-8444-444444444444",
+  owner_agent: "agent://owner",
+  callback_url: "https://integrator.example/webhooks/axme",
+  event_types: ["inbox.thread_created"],
+  active: true,
+  description: "sdk-test",
+  created_at: "2026-02-28T00:00:00Z",
+  updated_at: "2026-02-28T00:00:01Z",
+  revoked_at: null,
+  secret_hint: "****hint",
+};
+
 test("health returns parsed payload", async () => {
   const client = new AxmeClient(
     { baseUrl: "https://api.axme.test", apiKey: "token" },
@@ -247,4 +260,151 @@ test("listInbox maps 429 to AxmeRateLimitError and parses retry-after", async ()
       return true;
     },
   );
+});
+
+test("upsertWebhookSubscription sends payload with idempotency header", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/webhooks/subscriptions");
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "wh-1");
+      assert.equal(
+        init?.body,
+        JSON.stringify({
+          callback_url: "https://integrator.example/webhooks/axme",
+          event_types: ["inbox.thread_created"],
+          active: true,
+        }),
+      );
+      return new Response(JSON.stringify({ ok: true, subscription: WEBHOOK_SUBSCRIPTION }), { status: 200 });
+    },
+  );
+
+  assert.deepEqual(
+    await client.upsertWebhookSubscription(
+      {
+        callback_url: "https://integrator.example/webhooks/axme",
+        event_types: ["inbox.thread_created"],
+        active: true,
+      },
+      { idempotencyKey: "wh-1" },
+    ),
+    { ok: true, subscription: WEBHOOK_SUBSCRIPTION },
+  );
+});
+
+test("listWebhookSubscriptions sends owner_agent query", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/webhooks/subscriptions?owner_agent=agent%3A%2F%2Fowner");
+      assert.equal(init?.method, "GET");
+      return new Response(JSON.stringify({ ok: true, subscriptions: [WEBHOOK_SUBSCRIPTION] }), { status: 200 });
+    },
+  );
+
+  assert.deepEqual(await client.listWebhookSubscriptions({ ownerAgent: "agent://owner" }), {
+    ok: true,
+    subscriptions: [WEBHOOK_SUBSCRIPTION],
+  });
+});
+
+test("deleteWebhookSubscription sends owner_agent query", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(
+        input.toString(),
+        "https://api.axme.test/v1/webhooks/subscriptions/44444444-4444-4444-8444-444444444444?owner_agent=agent%3A%2F%2Fowner",
+      );
+      assert.equal(init?.method, "DELETE");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          subscription_id: "44444444-4444-4444-8444-444444444444",
+          revoked_at: "2026-02-28T00:00:03Z",
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  assert.deepEqual(
+    await client.deleteWebhookSubscription("44444444-4444-4444-8444-444444444444", { ownerAgent: "agent://owner" }),
+    {
+      ok: true,
+      subscription_id: "44444444-4444-4444-8444-444444444444",
+      revoked_at: "2026-02-28T00:00:03Z",
+    },
+  );
+});
+
+test("publishWebhookEvent sends owner_agent query and payload", async () => {
+  const eventId = "33333333-3333-4333-8333-333333333333";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/webhooks/events?owner_agent=agent%3A%2F%2Fowner");
+      assert.equal(init?.method, "POST");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          accepted_at: "2026-02-28T00:00:01Z",
+          event_type: "inbox.thread_created",
+          source: "sdk-test",
+          owner_agent: "agent://owner",
+          event_id: eventId,
+          queued_deliveries: 1,
+          processed_deliveries: 1,
+          delivered: 1,
+          pending: 0,
+          dead_lettered: 0,
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  assert.equal(
+    (
+      await client.publishWebhookEvent(
+        { event_type: "inbox.thread_created", source: "sdk-test", payload: { thread_id: "t-1" } },
+        { ownerAgent: "agent://owner" },
+      )
+    ).event_id,
+    eventId,
+  );
+});
+
+test("replayWebhookEvent sends owner_agent query", async () => {
+  const eventId = "33333333-3333-4333-8333-333333333333";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(
+        input.toString(),
+        "https://api.axme.test/v1/webhooks/events/33333333-3333-4333-8333-333333333333/replay?owner_agent=agent%3A%2F%2Fowner",
+      );
+      assert.equal(init?.method, "POST");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          event_id: eventId,
+          owner_agent: "agent://owner",
+          event_type: "inbox.thread_created",
+          queued_deliveries: 1,
+          processed_deliveries: 1,
+          delivered: 1,
+          pending: 0,
+          dead_lettered: 0,
+          replayed_at: "2026-02-28T00:00:02Z",
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  assert.equal((await client.replayWebhookEvent(eventId, { ownerAgent: "agent://owner" })).event_id, eventId);
 });

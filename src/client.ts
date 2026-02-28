@@ -29,6 +29,10 @@ export type InboxChangesOptions = OwnerScopedOptions & {
   limit?: number;
 };
 
+export type WebhookSubscriptionUpsertOptions = {
+  idempotencyKey?: string;
+};
+
 export class AxmeClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
@@ -124,6 +128,70 @@ export class AxmeClient {
   async listInboxChanges(options: InboxChangesOptions = {}): Promise<Record<string, unknown>> {
     const response = await this.fetchImpl(this.buildUrl("/v1/inbox/changes", options), {
       method: "GET",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+    return parseJsonResponse(response);
+  }
+
+  async upsertWebhookSubscription(
+    payload: Record<string, unknown>,
+    options: WebhookSubscriptionUpsertOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.apiKey}`,
+      "Content-Type": "application/json",
+    };
+    if (options.idempotencyKey) {
+      headers["Idempotency-Key"] = options.idempotencyKey;
+    }
+    const response = await this.fetchImpl(`${this.baseUrl}/v1/webhooks/subscriptions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+    return parseJsonResponse(response);
+  }
+
+  async listWebhookSubscriptions(options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
+    const response = await this.fetchImpl(this.buildUrl("/v1/webhooks/subscriptions", options), {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+    return parseJsonResponse(response);
+  }
+
+  async deleteWebhookSubscription(subscriptionId: string, options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
+    const response = await this.fetchImpl(this.buildUrl(`/v1/webhooks/subscriptions/${subscriptionId}`, options), {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+    return parseJsonResponse(response);
+  }
+
+  async publishWebhookEvent(payload: Record<string, unknown>, options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
+    const response = await this.fetchImpl(this.buildUrl("/v1/webhooks/events", options), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    return parseJsonResponse(response);
+  }
+
+  async replayWebhookEvent(eventId: string, options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
+    const response = await this.fetchImpl(this.buildUrl(`/v1/webhooks/events/${eventId}/replay`, options), {
+      method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         "Content-Type": "application/json",
