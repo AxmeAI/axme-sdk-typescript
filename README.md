@@ -14,9 +14,11 @@ import { AxmeClient } from "@axme/sdk";
 const client = new AxmeClient({
   baseUrl: "https://gateway.example.com",
   apiKey: "YOUR_API_KEY",
+  maxRetries: 2,
+  retryBackoffMs: 200,
 });
 
-console.log(await client.health());
+console.log(await client.health({ traceId: "trace-quickstart-001" }));
 console.log(
   await client.createIntent(
     {
@@ -31,7 +33,7 @@ console.log(
     },
   ),
 );
-console.log(await client.listInbox({ ownerAgent: "agent://example/receiver" }));
+console.log(await client.listInbox({ ownerAgent: "agent://example/receiver", traceId: "trace-inbox-001" }));
 console.log(await client.listInboxChanges({ ownerAgent: "agent://example/receiver", limit: 50 }));
 console.log(
   await client.replyInboxThread("11111111-1111-4111-8111-111111111111", "Acknowledged", {

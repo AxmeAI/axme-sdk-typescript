@@ -50,6 +50,19 @@ test("health returns parsed payload", async () => {
   assert.deepEqual(await client.health(), { ok: true });
 });
 
+test("health propagates provided trace id", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token", autoTraceId: false },
+    async (_input, init) => {
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["X-Trace-Id"], "trace-123");
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    },
+  );
+
+  assert.deepEqual(await client.health({ traceId: "trace-123" }), { ok: true });
+});
+
 test("createIntent sends json and returns payload", async () => {
   const client = new AxmeClient(
     { baseUrl: "https://api.axme.test/", apiKey: "token" },
@@ -247,7 +260,7 @@ test("createIntent maps 422 to AxmeValidationError", async () => {
 
 test("listInbox maps 429 to AxmeRateLimitError and parses retry-after", async () => {
   const client = new AxmeClient(
-    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    { baseUrl: "https://api.axme.test", apiKey: "token", maxRetries: 0 },
     async () => new Response(JSON.stringify({ message: "slow down" }), { status: 429, headers: { "Retry-After": "20" } }),
   );
 
@@ -407,4 +420,79 @@ test("replayWebhookEvent sends owner_agent query", async () => {
   );
 
   assert.equal((await client.replayWebhookEvent(eventId, { ownerAgent: "agent://owner" })).event_id, eventId);
+});
+
+test("retries transient GET failures", async () => {
+  let attempts = 0;
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token", retryBackoffMs: 0 },
+    async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Response(JSON.stringify({ error: "temporary" }), { status: 500 });
+      }
+      return new Response(JSON.stringify({ ok: true, threads: [] }), { status: 200 });
+    },
+  );
+
+  assert.deepEqual(await client.listInbox(), { ok: true, threads: [] });
+  assert.equal(attempts, 2);
+});
+
+test("retries idempotent POST when idempotency key exists", async () => {
+  let attempts = 0;
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token", retryBackoffMs: 0 },
+    async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Response(JSON.stringify({ error: "temporary" }), { status: 500 });
+      }
+      return new Response(JSON.stringify({ intent_id: "it_123" }), { status: 200 });
+    },
+  );
+
+  assert.deepEqual(
+    await client.createIntent(
+      {
+        intent_type: "notify.message.v1",
+        from_agent: "agent://self",
+        to_agent: "agent://target",
+        payload: {},
+      },
+      { correlationId: "11111111-1111-1111-1111-111111111111", idempotencyKey: "idem-retry" },
+    ),
+    { intent_id: "it_123" },
+  );
+  assert.equal(attempts, 2);
+});
+
+test("does not retry non-idempotent POST by default", async () => {
+  let attempts = 0;
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token", retryBackoffMs: 0 },
+    async () => {
+      attempts += 1;
+      return new Response(JSON.stringify({ error: "temporary" }), { status: 500 });
+    },
+  );
+
+  await assert.rejects(
+    async () =>
+      client.createIntent(
+        {
+          intent_type: "notify.message.v1",
+          from_agent: "agent://self",
+          to_agent: "agent://target",
+          payload: {},
+        },
+        { correlationId: "11111111-1111-1111-1111-111111111111" },
+      ),
+    (error: unknown) => {
+      assert.ok(error instanceof AxmeHttpError);
+      assert.equal(error.statusCode, 500);
+      return true;
+    },
+  );
+  assert.equal(attempts, 1);
 });
