@@ -9,14 +9,21 @@ import {
 export type AxmeClientConfig = {
   baseUrl: string;
   apiKey: string;
+  maxRetries?: number;
+  retryBackoffMs?: number;
+  autoTraceId?: boolean;
 };
 
-export type CreateIntentOptions = {
+export type RequestOptions = {
+  traceId?: string;
+};
+
+export type CreateIntentOptions = RequestOptions & {
   correlationId: string;
   idempotencyKey?: string;
 };
 
-export type OwnerScopedOptions = {
+export type OwnerScopedOptions = RequestOptions & {
   ownerAgent?: string;
 };
 
@@ -29,30 +36,37 @@ export type InboxChangesOptions = OwnerScopedOptions & {
   limit?: number;
 };
 
-export type WebhookSubscriptionUpsertOptions = {
+export type WebhookSubscriptionUpsertOptions = RequestOptions & {
+  idempotencyKey?: string;
+};
+
+export type IdempotentOwnerScopedOptions = OwnerScopedOptions & {
   idempotencyKey?: string;
 };
 
 export class AxmeClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
+  private readonly maxRetries: number;
+  private readonly retryBackoffMs: number;
+  private readonly autoTraceId: boolean;
   private readonly fetchImpl: typeof fetch;
 
   constructor(config: AxmeClientConfig, fetchImpl: typeof fetch = fetch) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, "");
     this.apiKey = config.apiKey;
+    this.maxRetries = config.maxRetries ?? 2;
+    this.retryBackoffMs = config.retryBackoffMs ?? 200;
+    this.autoTraceId = config.autoTraceId ?? true;
     this.fetchImpl = fetchImpl;
   }
 
-  async health(): Promise<Record<string, unknown>> {
-    const response = await this.fetchImpl(`${this.baseUrl}/health`, {
+  async health(options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson("/health", {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
+      retryable: true,
+      traceId: options.traceId,
     });
-    return parseJsonResponse(response);
   }
 
   async createIntent(
@@ -67,42 +81,29 @@ export class AxmeClient {
       ...payload,
       correlation_id: options.correlationId,
     };
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.apiKey}`,
-      "Content-Type": "application/json",
-    };
-    if (options.idempotencyKey) {
-      headers["Idempotency-Key"] = options.idempotencyKey;
-    }
-
-    const response = await this.fetchImpl(`${this.baseUrl}/v1/intents`, {
+    return this.requestJson("/v1/intents", {
       method: "POST",
-      headers,
       body: JSON.stringify(requestPayload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
     });
-    return parseJsonResponse(response);
   }
 
   async listInbox(options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
-    const response = await this.fetchImpl(this.buildUrl("/v1/inbox", options), {
+    return this.requestJson(this.buildUrl("/v1/inbox", options), {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
+      retryable: true,
+      traceId: options.traceId,
     });
-    return parseJsonResponse(response);
   }
 
   async getInboxThread(threadId: string, options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
-    const response = await this.fetchImpl(this.buildUrl(`/v1/inbox/${threadId}`, options), {
+    return this.requestJson(this.buildUrl(`/v1/inbox/${threadId}`, options), {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
+      retryable: true,
+      traceId: options.traceId,
     });
-    return parseJsonResponse(response);
   }
 
   async replyInboxThread(
@@ -110,94 +111,148 @@ export class AxmeClient {
     message: string,
     options: ReplyInboxOptions = {},
   ): Promise<Record<string, unknown>> {
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.apiKey}`,
-      "Content-Type": "application/json",
-    };
-    if (options.idempotencyKey) {
-      headers["Idempotency-Key"] = options.idempotencyKey;
-    }
-    const response = await this.fetchImpl(this.buildUrl(`/v1/inbox/${threadId}/reply`, options), {
+    return this.requestJson(this.buildUrl(`/v1/inbox/${threadId}/reply`, options), {
       method: "POST",
-      headers,
       body: JSON.stringify({ message }),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
     });
-    return parseJsonResponse(response);
   }
 
   async listInboxChanges(options: InboxChangesOptions = {}): Promise<Record<string, unknown>> {
-    const response = await this.fetchImpl(this.buildUrl("/v1/inbox/changes", options), {
+    return this.requestJson(this.buildUrl("/v1/inbox/changes", options), {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
+      retryable: true,
+      traceId: options.traceId,
     });
-    return parseJsonResponse(response);
   }
 
   async upsertWebhookSubscription(
     payload: Record<string, unknown>,
     options: WebhookSubscriptionUpsertOptions = {},
   ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/webhooks/subscriptions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async listWebhookSubscriptions(options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(this.buildUrl("/v1/webhooks/subscriptions", options), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async deleteWebhookSubscription(subscriptionId: string, options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(this.buildUrl(`/v1/webhooks/subscriptions/${subscriptionId}`, options), {
+      method: "DELETE",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async publishWebhookEvent(
+    payload: Record<string, unknown>,
+    options: IdempotentOwnerScopedOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(this.buildUrl("/v1/webhooks/events", options), {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async replayWebhookEvent(
+    eventId: string,
+    options: IdempotentOwnerScopedOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(this.buildUrl(`/v1/webhooks/events/${eventId}/replay`, options), {
+      method: "POST",
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  private async requestJson(
+    pathOrUrl: string,
+    options: {
+      method: string;
+      body?: string;
+      idempotencyKey?: string;
+      traceId?: string;
+      retryable: boolean;
+    },
+  ): Promise<Record<string, unknown>> {
+    const attempts = 1 + (options.retryable ? this.maxRetries : 0);
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      let response: Response;
+      try {
+        response = await this.fetchImpl(this.toAbsoluteUrl(pathOrUrl), {
+          method: options.method,
+          headers: this.buildHeaders(options.idempotencyKey, options.traceId),
+          body: options.body,
+        });
+      } catch (error) {
+        if (attempt >= attempts - 1) {
+          throw error;
+        }
+        await delay(this.retryBackoffMs * 2 ** attempt);
+        continue;
+      }
+
+      if (options.retryable && attempt < attempts - 1 && isRetryableStatus(response.status)) {
+        const retryAfter = parseRetryAfter(response.headers.get("retry-after"));
+        if (typeof retryAfter === "number") {
+          await delay(Math.max(retryAfter, 0) * 1000);
+        } else {
+          await delay(this.retryBackoffMs * 2 ** attempt);
+        }
+        continue;
+      }
+      return parseJsonResponse(response);
+    }
+    throw new Error("unreachable retry loop state");
+  }
+
+  private buildHeaders(idempotencyKey?: string, traceId?: string): Record<string, string> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
     };
-    if (options.idempotencyKey) {
-      headers["Idempotency-Key"] = options.idempotencyKey;
+    if (idempotencyKey) {
+      headers["Idempotency-Key"] = idempotencyKey;
     }
-    const response = await this.fetchImpl(`${this.baseUrl}/v1/webhooks/subscriptions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
-    return parseJsonResponse(response);
+    const normalizedTraceId = this.resolveTraceId(traceId);
+    if (normalizedTraceId) {
+      headers["X-Trace-Id"] = normalizedTraceId;
+    }
+    return headers;
   }
 
-  async listWebhookSubscriptions(options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
-    const response = await this.fetchImpl(this.buildUrl("/v1/webhooks/subscriptions", options), {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
-    return parseJsonResponse(response);
+  private resolveTraceId(traceId?: string): string | undefined {
+    if (traceId && traceId.length > 0) {
+      return traceId;
+    }
+    if (!this.autoTraceId) {
+      return undefined;
+    }
+    return crypto.randomUUID();
   }
 
-  async deleteWebhookSubscription(subscriptionId: string, options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
-    const response = await this.fetchImpl(this.buildUrl(`/v1/webhooks/subscriptions/${subscriptionId}`, options), {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
-    return parseJsonResponse(response);
-  }
-
-  async publishWebhookEvent(payload: Record<string, unknown>, options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
-    const response = await this.fetchImpl(this.buildUrl("/v1/webhooks/events", options), {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-    return parseJsonResponse(response);
-  }
-
-  async replayWebhookEvent(eventId: string, options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
-    const response = await this.fetchImpl(this.buildUrl(`/v1/webhooks/events/${eventId}/replay`, options), {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
-    return parseJsonResponse(response);
+  private toAbsoluteUrl(pathOrUrl: string): string {
+    if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
+      return pathOrUrl;
+    }
+    return `${this.baseUrl}${pathOrUrl}`;
   }
 
   private buildUrl(path: string, options: OwnerScopedOptions & { cursor?: string; limit?: number }): string {
@@ -213,6 +268,19 @@ export class AxmeClient {
     }
     return url.toString();
   }
+}
+
+function isRetryableStatus(statusCode: number): boolean {
+  return statusCode === 429 || statusCode >= 500;
+}
+
+function delay(ms: number): Promise<void> {
+  if (ms <= 0) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function parseJsonResponse(response: Response): Promise<Record<string, unknown>> {
