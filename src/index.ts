@@ -2,7 +2,15 @@ export {
   AxmeClient,
   type AxmeClientConfig,
   type CreateIntentOptions,
+  type InboxChangesOptions,
   type OwnerScopedOptions,
   type ReplyInboxOptions,
 } from "./client.js";
-export { AxmeError, AxmeHttpError } from "./errors.js";
+export {
+  AxmeAuthError,
+  AxmeError,
+  AxmeHttpError,
+  AxmeRateLimitError,
+  AxmeServerError,
+  AxmeValidationError,
+} from "./errors.js";

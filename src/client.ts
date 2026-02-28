@@ -1,4 +1,10 @@
-import { AxmeHttpError } from "./errors.js";
+import {
+  AxmeAuthError,
+  AxmeHttpError,
+  AxmeRateLimitError,
+  AxmeServerError,
+  AxmeValidationError,
+} from "./errors.js";
 
 export type AxmeClientConfig = {
   baseUrl: string;
@@ -16,6 +22,11 @@ export type OwnerScopedOptions = {
 
 export type ReplyInboxOptions = OwnerScopedOptions & {
   idempotencyKey?: string;
+};
+
+export type InboxChangesOptions = OwnerScopedOptions & {
+  cursor?: string;
+  limit?: number;
 };
 
 export class AxmeClient {
@@ -110,10 +121,27 @@ export class AxmeClient {
     return parseJsonResponse(response);
   }
 
-  private buildUrl(path: string, options: OwnerScopedOptions): string {
+  async listInboxChanges(options: InboxChangesOptions = {}): Promise<Record<string, unknown>> {
+    const response = await this.fetchImpl(this.buildUrl("/v1/inbox/changes", options), {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+    return parseJsonResponse(response);
+  }
+
+  private buildUrl(path: string, options: OwnerScopedOptions & { cursor?: string; limit?: number }): string {
     const url = new URL(`${this.baseUrl}${path}`);
     if (options.ownerAgent) {
       url.searchParams.set("owner_agent", options.ownerAgent);
+    }
+    if (typeof options.cursor === "string") {
+      url.searchParams.set("cursor", options.cursor);
+    }
+    if (typeof options.limit === "number") {
+      url.searchParams.set("limit", String(options.limit));
     }
     return url.toString();
   }
@@ -121,7 +149,69 @@ export class AxmeClient {
 
 async function parseJsonResponse(response: Response): Promise<Record<string, unknown>> {
   if (!response.ok) {
-    throw new AxmeHttpError(response.status, await response.text());
+    throw await buildHttpError(response);
   }
   return (await response.json()) as Record<string, unknown>;
+}
+
+async function buildHttpError(response: Response): Promise<AxmeHttpError> {
+  let body: unknown;
+  try {
+    body = await response.clone().json();
+  } catch {
+    body = undefined;
+  }
+
+  const text = await response.text();
+  const message = extractErrorMessage(body, text);
+  const options = {
+    body,
+    requestId: response.headers.get("x-request-id") ?? response.headers.get("request-id") ?? undefined,
+    traceId: response.headers.get("x-trace-id") ?? response.headers.get("trace-id") ?? undefined,
+    retryAfter: parseRetryAfter(response.headers.get("retry-after")),
+  };
+  if (response.status === 401 || response.status === 403) {
+    return new AxmeAuthError(response.status, message, options);
+  }
+  if ([400, 409, 413, 422].includes(response.status)) {
+    return new AxmeValidationError(response.status, message, options);
+  }
+  if (response.status === 429) {
+    return new AxmeRateLimitError(response.status, message, options);
+  }
+  if (response.status >= 500) {
+    return new AxmeServerError(response.status, message, options);
+  }
+  return new AxmeHttpError(response.status, message, options);
+}
+
+function extractErrorMessage(body: unknown, fallback: string): string {
+  if (typeof body === "string" && body.length > 0) {
+    return body;
+  }
+  if (body && typeof body === "object") {
+    const asRecord = body as Record<string, unknown>;
+    const errorValue = asRecord.error;
+    if (typeof errorValue === "string" && errorValue.length > 0) {
+      return errorValue;
+    }
+    if (errorValue && typeof errorValue === "object" && typeof (errorValue as Record<string, unknown>).message === "string") {
+      return (errorValue as Record<string, string>).message;
+    }
+    if (typeof asRecord.message === "string" && asRecord.message.length > 0) {
+      return asRecord.message;
+    }
+  }
+  return fallback;
+}
+
+function parseRetryAfter(value: string | null): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) {
+    return undefined;
+  }
+  return parsed;
 }

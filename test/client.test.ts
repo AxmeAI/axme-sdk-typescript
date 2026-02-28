@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { AxmeClient, AxmeHttpError } from "../src/index.js";
+import { AxmeAuthError, AxmeClient, AxmeHttpError, AxmeRateLimitError, AxmeValidationError } from "../src/index.js";
 
 const THREAD_PAYLOAD = {
   thread_id: "11111111-1111-4111-8111-111111111111",
@@ -96,6 +96,7 @@ test("createIntent throws AxmeHttpError on non-2xx", async () => {
       ),
     (error: unknown) => {
       assert.ok(error instanceof AxmeHttpError);
+      assert.ok(error instanceof AxmeAuthError);
       assert.equal(error.statusCode, 401);
       return true;
     },
@@ -182,5 +183,68 @@ test("replyInboxThread sends message body and idempotency header", async () => {
       idempotencyKey: "reply-1",
     }),
     { ok: true, thread: THREAD_PAYLOAD },
+  );
+});
+
+test("listInboxChanges sends pagination query params", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(
+        input.toString(),
+        "https://api.axme.test/v1/inbox/changes?owner_agent=agent%3A%2F%2Fowner&cursor=cur-1&limit=50",
+      );
+      assert.equal(init?.method, "GET");
+      return new Response(JSON.stringify({ ok: true, changes: [], next_cursor: null, has_more: false }), { status: 200 });
+    },
+  );
+
+  assert.deepEqual(await client.listInboxChanges({ ownerAgent: "agent://owner", cursor: "cur-1", limit: 50 }), {
+    ok: true,
+    changes: [],
+    next_cursor: null,
+    has_more: false,
+  });
+});
+
+test("createIntent maps 422 to AxmeValidationError", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async () => new Response(JSON.stringify({ message: "invalid payload" }), { status: 422 }),
+  );
+
+  await assert.rejects(
+    async () =>
+      client.createIntent(
+        {
+          intent_type: "notify.message.v1",
+          from_agent: "agent://self",
+          to_agent: "agent://target",
+          payload: {},
+        },
+        { correlationId: "11111111-1111-1111-1111-111111111111" },
+      ),
+    (error: unknown) => {
+      assert.ok(error instanceof AxmeValidationError);
+      assert.equal(error.statusCode, 422);
+      return true;
+    },
+  );
+});
+
+test("listInbox maps 429 to AxmeRateLimitError and parses retry-after", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async () => new Response(JSON.stringify({ message: "slow down" }), { status: 429, headers: { "Retry-After": "20" } }),
+  );
+
+  await assert.rejects(
+    async () => client.listInbox(),
+    (error: unknown) => {
+      assert.ok(error instanceof AxmeRateLimitError);
+      assert.equal(error.statusCode, 429);
+      assert.equal(error.retryAfter, 20);
+      return true;
+    },
   );
 });

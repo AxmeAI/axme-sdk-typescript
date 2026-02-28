@@ -32,6 +32,7 @@ console.log(
   ),
 );
 console.log(await client.listInbox({ ownerAgent: "agent://example/receiver" }));
+console.log(await client.listInboxChanges({ ownerAgent: "agent://example/receiver", limit: 50 }));
 console.log(
   await client.replyInboxThread("11111111-1111-4111-8111-111111111111", "Acknowledged", {
     ownerAgent: "agent://example/receiver",
