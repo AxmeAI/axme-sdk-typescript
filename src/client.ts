@@ -10,6 +10,14 @@ export type CreateIntentOptions = {
   idempotencyKey?: string;
 };
 
+export type OwnerScopedOptions = {
+  ownerAgent?: string;
+};
+
+export type ReplyInboxOptions = OwnerScopedOptions & {
+  idempotencyKey?: string;
+};
+
 export class AxmeClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
@@ -58,6 +66,56 @@ export class AxmeClient {
       body: JSON.stringify(requestPayload),
     });
     return parseJsonResponse(response);
+  }
+
+  async listInbox(options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
+    const response = await this.fetchImpl(this.buildUrl("/v1/inbox", options), {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+    return parseJsonResponse(response);
+  }
+
+  async getInboxThread(threadId: string, options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
+    const response = await this.fetchImpl(this.buildUrl(`/v1/inbox/${threadId}`, options), {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+    return parseJsonResponse(response);
+  }
+
+  async replyInboxThread(
+    threadId: string,
+    message: string,
+    options: ReplyInboxOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.apiKey}`,
+      "Content-Type": "application/json",
+    };
+    if (options.idempotencyKey) {
+      headers["Idempotency-Key"] = options.idempotencyKey;
+    }
+    const response = await this.fetchImpl(this.buildUrl(`/v1/inbox/${threadId}/reply`, options), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ message }),
+    });
+    return parseJsonResponse(response);
+  }
+
+  private buildUrl(path: string, options: OwnerScopedOptions): string {
+    const url = new URL(`${this.baseUrl}${path}`);
+    if (options.ownerAgent) {
+      url.searchParams.set("owner_agent", options.ownerAgent);
+    }
+    return url.toString();
   }
 }
 
