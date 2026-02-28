@@ -5,6 +5,11 @@ export type AxmeClientConfig = {
   apiKey: string;
 };
 
+export type CreateIntentOptions = {
+  correlationId: string;
+  idempotencyKey?: string;
+};
+
 export class AxmeClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
@@ -27,14 +32,30 @@ export class AxmeClient {
     return parseJsonResponse(response);
   }
 
-  async createIntent(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async createIntent(
+    payload: Record<string, unknown>,
+    options: CreateIntentOptions,
+  ): Promise<Record<string, unknown>> {
+    const payloadCorrelationId = payload["correlation_id"];
+    if (typeof payloadCorrelationId === "string" && payloadCorrelationId !== options.correlationId) {
+      throw new Error("payload correlation_id must match options.correlationId");
+    }
+    const requestPayload: Record<string, unknown> = {
+      ...payload,
+      correlation_id: options.correlationId,
+    };
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.apiKey}`,
+      "Content-Type": "application/json",
+    };
+    if (options.idempotencyKey) {
+      headers["Idempotency-Key"] = options.idempotencyKey;
+    }
+
     const response = await this.fetchImpl(`${this.baseUrl}/v1/intents`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
+      headers,
+      body: JSON.stringify(requestPayload),
     });
     return parseJsonResponse(response);
   }
