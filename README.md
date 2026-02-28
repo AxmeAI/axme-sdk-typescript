@@ -17,6 +17,20 @@ const client = new AxmeClient({
 });
 
 console.log(await client.health());
+console.log(
+  await client.createIntent(
+    {
+      intent_type: "notify.message.v1",
+      from_agent: "agent://example/sender",
+      to_agent: "agent://example/receiver",
+      payload: { text: "hello" },
+    },
+    {
+      correlationId: "11111111-1111-1111-1111-111111111111",
+      idempotencyKey: "create-intent-001",
+    },
+  ),
+);
 ```
 
 ## Development
