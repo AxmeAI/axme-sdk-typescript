@@ -233,6 +233,57 @@ test("listInboxChanges sends pagination query params", async () => {
   });
 });
 
+test("decideApproval sends decision payload and idempotency header", async () => {
+  const approvalId = "55555555-5555-4555-8555-555555555555";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), `https://api.axme.test/v1/approvals/${approvalId}/decision`);
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "approval-1");
+      assert.equal(init?.body, JSON.stringify({ decision: "approve", comment: "approved" }));
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          approval: {
+            approval_id: approvalId,
+            decision: "approve",
+            comment: "approved",
+            decided_at: "2026-02-28T00:00:01Z",
+          },
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  assert.equal(
+    (await client.decideApproval(approvalId, "approve", { comment: "approved", idempotencyKey: "approval-1" })).ok,
+    true,
+  );
+});
+
+test("getCapabilities returns capabilities payload", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/capabilities");
+      assert.equal(init?.method, "GET");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          capabilities: ["inbox", "intents"],
+          supported_intent_types: ["intent.ask.v1", "intent.notify.v1"],
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  assert.equal((await client.getCapabilities()).ok, true);
+});
+
 test("createIntent maps 422 to AxmeValidationError", async () => {
   const client = new AxmeClient(
     { baseUrl: "https://api.axme.test", apiKey: "token" },
