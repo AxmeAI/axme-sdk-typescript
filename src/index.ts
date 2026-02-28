@@ -2,6 +2,7 @@ export {
   AxmeClient,
   type AxmeClientConfig,
   type CreateIntentOptions,
+  type DecideApprovalOptions,
   type IdempotentOwnerScopedOptions,
   type InboxChangesOptions,
   type OwnerScopedOptions,

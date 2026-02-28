@@ -42,6 +42,13 @@ console.log(
   }),
 );
 console.log(
+  await client.decideApproval("55555555-5555-4555-8555-555555555555", "approve", {
+    comment: "Looks good",
+    idempotencyKey: "approval-001",
+  }),
+);
+console.log(await client.getCapabilities());
+console.log(
   await client.upsertWebhookSubscription({
     callback_url: "https://integrator.example/webhooks/axme",
     event_types: ["inbox.thread_created"],

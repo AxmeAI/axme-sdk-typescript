@@ -40,6 +40,11 @@ export type WebhookSubscriptionUpsertOptions = RequestOptions & {
   idempotencyKey?: string;
 };
 
+export type DecideApprovalOptions = RequestOptions & {
+  comment?: string;
+  idempotencyKey?: string;
+};
+
 export type IdempotentOwnerScopedOptions = OwnerScopedOptions & {
   idempotencyKey?: string;
 };
@@ -122,6 +127,32 @@ export class AxmeClient {
 
   async listInboxChanges(options: InboxChangesOptions = {}): Promise<Record<string, unknown>> {
     return this.requestJson(this.buildUrl("/v1/inbox/changes", options), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async decideApproval(
+    approvalId: string,
+    decision: "approve" | "reject",
+    options: DecideApprovalOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const payload: Record<string, unknown> = { decision };
+    if (typeof options.comment === "string") {
+      payload.comment = options.comment;
+    }
+    return this.requestJson(`/v1/approvals/${approvalId}/decision`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async getCapabilities(options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/capabilities", {
       method: "GET",
       retryable: true,
       traceId: options.traceId,
