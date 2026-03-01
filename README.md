@@ -168,6 +168,15 @@ console.log(
     { ownerAgent: "agent://example/receiver" },
   ),
 );
+console.log(await client.mcpInitialize());
+console.log(await client.mcpListTools());
+console.log(
+  await client.mcpCallTool("axme.send", {
+    arguments: { to: "agent://example/receiver", text: "hello from MCP" },
+    ownerAgent: "agent://example/receiver",
+    idempotencyKey: "mcp-send-001",
+  }),
+);
 ```
 
 ## Development

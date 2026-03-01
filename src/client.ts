@@ -12,6 +12,10 @@ export type AxmeClientConfig = {
   maxRetries?: number;
   retryBackoffMs?: number;
   autoTraceId?: boolean;
+  defaultOwnerAgent?: string;
+  mcpEndpointPath?: string;
+  mcpProtocolVersion?: string;
+  mcpObserver?: (event: McpObserverEvent) => void;
 };
 
 export type RequestOptions = {
@@ -61,6 +65,22 @@ export type UserWriteOptions = RequestOptions & {
   idempotencyKey?: string;
 };
 
+export type McpObserverEvent = {
+  phase: "request" | "response";
+  method: string;
+  rpcId: string;
+  retryable: boolean;
+  resultKeys?: string[];
+};
+
+export type McpCallToolOptions = RequestOptions & {
+  arguments?: Record<string, unknown>;
+  ownerAgent?: string;
+  idempotencyKey?: string;
+  validateInputSchema?: boolean;
+  retryable?: boolean;
+};
+
 export type IdempotentOwnerScopedOptions = OwnerScopedOptions & {
   idempotencyKey?: string;
 };
@@ -71,6 +91,11 @@ export class AxmeClient {
   private readonly maxRetries: number;
   private readonly retryBackoffMs: number;
   private readonly autoTraceId: boolean;
+  private readonly defaultOwnerAgent?: string;
+  private readonly mcpEndpointPath: string;
+  private readonly mcpProtocolVersion: string;
+  private readonly mcpObserver?: (event: McpObserverEvent) => void;
+  private readonly mcpToolSchemas: Record<string, Record<string, unknown>>;
   private readonly fetchImpl: typeof fetch;
 
   constructor(config: AxmeClientConfig, fetchImpl: typeof fetch = fetch) {
@@ -79,6 +104,11 @@ export class AxmeClient {
     this.maxRetries = config.maxRetries ?? 2;
     this.retryBackoffMs = config.retryBackoffMs ?? 200;
     this.autoTraceId = config.autoTraceId ?? true;
+    this.defaultOwnerAgent = config.defaultOwnerAgent;
+    this.mcpEndpointPath = config.mcpEndpointPath ?? "/mcp";
+    this.mcpProtocolVersion = config.mcpProtocolVersion ?? "2024-11-05";
+    this.mcpObserver = config.mcpObserver;
+    this.mcpToolSchemas = {};
     this.fetchImpl = fetchImpl;
   }
 
@@ -329,6 +359,81 @@ export class AxmeClient {
     });
   }
 
+  async mcpInitialize(options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    const payload: Record<string, unknown> = {
+      jsonrpc: "2.0",
+      id: crypto.randomUUID(),
+      method: "initialize",
+      params: {
+        protocolVersion: this.mcpProtocolVersion,
+      },
+    };
+    return this.mcpRequest(payload, {
+      traceId: options.traceId,
+      retryable: true,
+    });
+  }
+
+  async mcpListTools(options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    const payload: Record<string, unknown> = {
+      jsonrpc: "2.0",
+      id: crypto.randomUUID(),
+      method: "tools/list",
+      params: {},
+    };
+    const result = await this.mcpRequest(payload, {
+      traceId: options.traceId,
+      retryable: true,
+    });
+    const tools = result.tools;
+    if (Array.isArray(tools)) {
+      for (const entry of tools) {
+        if (!entry || typeof entry !== "object") {
+          continue;
+        }
+        const asRecord = entry as Record<string, unknown>;
+        const name = asRecord.name;
+        const inputSchema = asRecord.inputSchema;
+        if (typeof name === "string" && inputSchema && typeof inputSchema === "object") {
+          this.mcpToolSchemas[name] = inputSchema as Record<string, unknown>;
+        }
+      }
+    }
+    return result;
+  }
+
+  async mcpCallTool(name: string, options: McpCallToolOptions = {}): Promise<Record<string, unknown>> {
+    if (!name || !name.trim()) {
+      throw new Error("tool name must be non-empty string");
+    }
+    const args: Record<string, unknown> = { ...(options.arguments ?? {}) };
+    const ownerAgent = options.ownerAgent ?? this.defaultOwnerAgent;
+    if (ownerAgent && typeof args.owner_agent !== "string") {
+      args.owner_agent = ownerAgent;
+    }
+    if (options.idempotencyKey && typeof args.idempotency_key !== "string") {
+      args.idempotency_key = options.idempotencyKey;
+    }
+    if (options.validateInputSchema ?? true) {
+      this.validateMcpToolArguments(name.trim(), args);
+    }
+    const params: Record<string, unknown> = { name: name.trim(), arguments: args };
+    if (ownerAgent) {
+      params.owner_agent = ownerAgent;
+    }
+    const payload: Record<string, unknown> = {
+      jsonrpc: "2.0",
+      id: crypto.randomUUID(),
+      method: "tools/call",
+      params,
+    };
+    const retryable = options.retryable ?? Boolean(options.idempotencyKey);
+    return this.mcpRequest(payload, {
+      traceId: options.traceId,
+      retryable,
+    });
+  }
+
   async registerNick(
     payload: Record<string, unknown>,
     options: UserWriteOptions = {},
@@ -480,6 +585,111 @@ export class AxmeClient {
     throw new Error("unreachable retry loop state");
   }
 
+  private async mcpRequest(
+    payload: Record<string, unknown>,
+    options: { traceId?: string; retryable: boolean },
+  ): Promise<Record<string, unknown>> {
+    const method = String(payload.method ?? "");
+    const rpcId = String(payload.id ?? "");
+    this.notifyMcpObserver({
+      phase: "request",
+      method,
+      rpcId,
+      retryable: options.retryable,
+    });
+    const response = await this.requestJson(this.mcpEndpointPath, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      traceId: options.traceId,
+      retryable: options.retryable,
+    });
+    const rpcError = response.error;
+    if (rpcError && typeof rpcError === "object") {
+      throw this.buildMcpRpcError(rpcError as Record<string, unknown>);
+    }
+    const result = response.result;
+    if (!result || typeof result !== "object") {
+      throw new AxmeHttpError(502, "invalid MCP response: missing result object", { body: response });
+    }
+    this.notifyMcpObserver({
+      phase: "response",
+      method,
+      rpcId,
+      retryable: options.retryable,
+      resultKeys: Object.keys(result as Record<string, unknown>).sort(),
+    });
+    return result as Record<string, unknown>;
+  }
+
+  private buildMcpRpcError(errorPayload: Record<string, unknown>): AxmeHttpError {
+    const codeRaw = errorPayload.code;
+    const messageRaw = errorPayload.message;
+    const code = typeof codeRaw === "number" ? codeRaw : -32000;
+    const message = typeof messageRaw === "string" && messageRaw.length > 0 ? messageRaw : "MCP RPC error";
+    const options = {
+      body: {
+        code,
+        message,
+        data: errorPayload.data,
+      },
+    };
+    if (code === -32004) {
+      return new AxmeRateLimitError(429, message, options);
+    }
+    if (code === -32001 || code === -32003) {
+      return new AxmeAuthError(403, message, options);
+    }
+    if (code === -32602) {
+      return new AxmeValidationError(422, message, options);
+    }
+    if (code <= -32000) {
+      return new AxmeServerError(502, message, options);
+    }
+    return new AxmeHttpError(400, message, options);
+  }
+
+  private validateMcpToolArguments(name: string, argumentsPayload: Record<string, unknown>): void {
+    const schema = this.mcpToolSchemas[name];
+    if (!schema || typeof schema !== "object") {
+      return;
+    }
+    const requiredRaw = schema.required;
+    if (Array.isArray(requiredRaw)) {
+      const missing = requiredRaw.filter((entry) => typeof entry === "string" && !(entry in argumentsPayload)) as string[];
+      if (missing.length > 0) {
+        throw new Error(`missing required MCP tool arguments for ${name}: ${missing.sort().join(", ")}`);
+      }
+    }
+    const properties = schema.properties;
+    if (!properties || typeof properties !== "object") {
+      return;
+    }
+    const propertiesRecord = properties as Record<string, unknown>;
+    for (const [key, value] of Object.entries(argumentsPayload)) {
+      const prop = propertiesRecord[key];
+      if (!prop || typeof prop !== "object") {
+        continue;
+      }
+      const propRecord = prop as Record<string, unknown>;
+      const declaredType = propRecord.type;
+      const acceptedTypes: string[] = Array.isArray(declaredType)
+        ? declaredType.filter((item): item is string => typeof item === "string")
+        : typeof declaredType === "string"
+          ? [declaredType]
+          : [];
+      if (acceptedTypes.length > 0 && !matchesJsonType(value, acceptedTypes)) {
+        throw new Error(`invalid MCP argument type for ${name}.${key}: expected ${acceptedTypes.join("|")}`);
+      }
+    }
+  }
+
+  private notifyMcpObserver(event: McpObserverEvent): void {
+    if (!this.mcpObserver) {
+      return;
+    }
+    this.mcpObserver(event);
+  }
+
   private buildHeaders(idempotencyKey?: string, traceId?: string): Record<string, string> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
@@ -607,4 +817,31 @@ function parseRetryAfter(value: string | null): number | undefined {
     return undefined;
   }
   return parsed;
+}
+
+function matchesJsonType(value: unknown, acceptedTypes: string[]): boolean {
+  for (const typeName of acceptedTypes) {
+    if (typeName === "null" && value === null) {
+      return true;
+    }
+    if (typeName === "string" && typeof value === "string") {
+      return true;
+    }
+    if (typeName === "boolean" && typeof value === "boolean") {
+      return true;
+    }
+    if (typeName === "integer" && Number.isInteger(value)) {
+      return true;
+    }
+    if (typeName === "number" && typeof value === "number") {
+      return true;
+    }
+    if (typeName === "object" && value !== null && typeof value === "object" && !Array.isArray(value)) {
+      return true;
+    }
+    if (typeName === "array" && Array.isArray(value)) {
+      return true;
+    }
+  }
+  return false;
 }

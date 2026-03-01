@@ -1162,3 +1162,188 @@ test("does not retry non-idempotent POST by default", async () => {
   );
   assert.equal(attempts, 1);
 });
+
+test("mcpInitialize sends initialize request and returns result", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/mcp");
+      assert.equal(init?.method, "POST");
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      assert.equal(body.jsonrpc, "2.0");
+      assert.equal(body.method, "initialize");
+      const params = body.params as Record<string, unknown>;
+      assert.equal(params.protocolVersion, "2024-11-05");
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: body.id,
+          result: { protocolVersion: "2024-11-05", capabilities: { tools: { listChanged: false } } },
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  const result = await client.mcpInitialize();
+  assert.equal(result.protocolVersion, "2024-11-05");
+});
+
+test("mcpListTools caches schema and mcpCallTool propagates owner/idempotency", async () => {
+  const observerEvents: Array<Record<string, unknown>> = [];
+  const client = new AxmeClient(
+    {
+      baseUrl: "https://api.axme.test",
+      apiKey: "token",
+      defaultOwnerAgent: "agent://owner/default",
+      mcpObserver: (event) => observerEvents.push(event as unknown as Record<string, unknown>),
+    },
+    async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      if (body.method === "tools/list") {
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: body.id,
+            result: {
+              tools: [
+                {
+                  name: "axme.send",
+                  inputSchema: {
+                    type: "object",
+                    required: ["to"],
+                    properties: {
+                      to: { type: "string" },
+                      text: { type: "string" },
+                      owner_agent: { type: "string" },
+                      idempotency_key: { type: "string" },
+                    },
+                  },
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      const params = body.params as Record<string, unknown>;
+      assert.equal(body.method, "tools/call");
+      assert.equal(params.name, "axme.send");
+      assert.equal(params.owner_agent, "agent://owner/default");
+      const args = params.arguments as Record<string, unknown>;
+      assert.equal(args.owner_agent, "agent://owner/default");
+      assert.equal(args.idempotency_key, "mcp-idem-1");
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: body.id,
+          result: { ok: true, tool: "axme.send", status: "completed" },
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  const listed = await client.mcpListTools();
+  const tools = listed.tools as unknown[];
+  assert.equal(Array.isArray(tools), true);
+  const called = await client.mcpCallTool("axme.send", {
+    arguments: { to: "agent://bob", text: "hello" },
+    idempotencyKey: "mcp-idem-1",
+  });
+  assert.equal(called.ok, true);
+  assert.ok(observerEvents.some((event) => event.phase === "request"));
+  assert.ok(observerEvents.some((event) => event.phase === "response"));
+});
+
+test("mcpCallTool validates required arguments from input schema", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      if (body.method === "tools/list") {
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: body.id,
+            result: {
+              tools: [
+                {
+                  name: "axme.reply",
+                  inputSchema: {
+                    type: "object",
+                    required: ["thread_id", "message"],
+                    properties: {
+                      thread_id: { type: "string" },
+                      message: { type: "string" },
+                    },
+                  },
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+    },
+  );
+
+  await client.mcpListTools();
+  await assert.rejects(async () => client.mcpCallTool("axme.reply", { arguments: { thread_id: "t-1" } }), /missing required MCP tool arguments/);
+});
+
+test("mcpCallTool maps RPC error to AxmeValidationError", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: body.id,
+          error: { code: -32602, message: "invalid params" },
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  await assert.rejects(
+    async () => client.mcpCallTool("axme.send", { arguments: { to: "agent://bob" } }),
+    (error: unknown) => {
+      assert.ok(error instanceof AxmeValidationError);
+      assert.equal(error.statusCode, 422);
+      return true;
+    },
+  );
+});
+
+test("mcpCallTool retries on transient HTTP failures when retryable", async () => {
+  let attempts = 0;
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token", retryBackoffMs: 0 },
+    async (_input, init) => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Response(JSON.stringify({ error: "temporary" }), { status: 500 });
+      }
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: body.id,
+          result: { ok: true, tool: "axme.send", status: "completed" },
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  const result = await client.mcpCallTool("axme.send", {
+    arguments: { to: "agent://bob", text: "hello" },
+    idempotencyKey: "idem-1",
+  });
+  assert.equal(result.ok, true);
+  assert.equal(attempts, 2);
+});

@@ -9,6 +9,8 @@ export {
   type UserWriteOptions,
   type IdempotentOwnerScopedOptions,
   type InboxChangesOptions,
+  type McpCallToolOptions,
+  type McpObserverEvent,
   type OwnerScopedOptions,
   type RequestOptions,
   type ReplyInboxOptions,
