@@ -27,6 +27,28 @@ export type CreateIntentOptions = RequestOptions & {
   idempotencyKey?: string;
 };
 
+export type SendIntentOptions = RequestOptions & {
+  correlationId?: string;
+  idempotencyKey?: string;
+};
+
+export type ListIntentEventsOptions = RequestOptions & {
+  since?: number;
+};
+
+export type ResolveIntentOptions = RequestOptions & {
+  idempotencyKey?: string;
+};
+
+export type ObserveIntentOptions = RequestOptions & {
+  since?: number;
+  waitSeconds?: number;
+  pollIntervalMs?: number;
+  timeoutMs?: number;
+};
+
+export type WaitForIntentOptions = ObserveIntentOptions;
+
 export type OwnerScopedOptions = RequestOptions & {
   ownerAgent?: string;
 };
@@ -147,6 +169,143 @@ export class AxmeClient {
       retryable: true,
       traceId: options.traceId,
     });
+  }
+
+  async sendIntent(payload: Record<string, unknown>, options: SendIntentOptions = {}): Promise<string> {
+    const created = await this.createIntent(payload, {
+      correlationId: options.correlationId ?? crypto.randomUUID(),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+    });
+    const intentId = created.intent_id;
+    if (typeof intentId !== "string" || intentId.length === 0) {
+      throw new Error("createIntent response does not include string intent_id");
+    }
+    return intentId;
+  }
+
+  async listIntentEvents(intentId: string, options: ListIntentEventsOptions = {}): Promise<Record<string, unknown>> {
+    if (typeof options.since === "number" && options.since < 0) {
+      throw new Error("since must be >= 0");
+    }
+    const url = new URL(`${this.baseUrl}/v1/intents/${intentId}/events`);
+    if (typeof options.since === "number") {
+      url.searchParams.set("since", String(options.since));
+    }
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async resolveIntent(
+    intentId: string,
+    payload: Record<string, unknown>,
+    options: ResolveIntentOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/intents/${intentId}/resolve`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async *observe(
+    intentId: string,
+    options: ObserveIntentOptions = {},
+  ): AsyncGenerator<Record<string, unknown>, void, void> {
+    const since = options.since ?? 0;
+    const waitSeconds = options.waitSeconds ?? 15;
+    const pollIntervalMs = options.pollIntervalMs ?? 1000;
+    if (since < 0) {
+      throw new Error("since must be >= 0");
+    }
+    if (waitSeconds < 1) {
+      throw new Error("waitSeconds must be >= 1");
+    }
+    if (pollIntervalMs < 0) {
+      throw new Error("pollIntervalMs must be >= 0");
+    }
+    if (typeof options.timeoutMs === "number" && options.timeoutMs <= 0) {
+      throw new Error("timeoutMs must be > 0 when provided");
+    }
+
+    const deadline = typeof options.timeoutMs === "number" ? Date.now() + options.timeoutMs : undefined;
+    let nextSince = since;
+
+    while (true) {
+      if (typeof deadline === "number" && Date.now() >= deadline) {
+        throw new Error(`timed out while observing intent ${intentId}`);
+      }
+
+      let streamWaitSeconds = waitSeconds;
+      if (typeof deadline === "number") {
+        const msLeft = Math.max(0, deadline - Date.now());
+        if (msLeft <= 0) {
+          throw new Error(`timed out while observing intent ${intentId}`);
+        }
+        streamWaitSeconds = Math.max(1, Math.min(waitSeconds, Math.floor(msLeft / 1000)));
+      }
+
+      try {
+        const streamedEvents = await this.fetchIntentEventStream(intentId, {
+          since: nextSince,
+          waitSeconds: streamWaitSeconds,
+          traceId: options.traceId,
+        });
+        for (const event of streamedEvents) {
+          nextSince = maxSeenSeq(nextSince, event);
+          yield event;
+          if (isTerminalIntentEvent(event)) {
+            return;
+          }
+        }
+      } catch (error) {
+        if (!(error instanceof AxmeHttpError) || ![404, 405, 501].includes(error.statusCode)) {
+          throw error;
+        }
+      }
+
+      const polled = await this.listIntentEvents(intentId, {
+        since: nextSince > 0 ? nextSince : undefined,
+        traceId: options.traceId,
+      });
+      const events = polled.events;
+      if (!Array.isArray(events)) {
+        throw new AxmeHttpError(502, "invalid intent events payload: events must be list", { body: polled });
+      }
+      if (events.length === 0) {
+        if (typeof deadline === "number" && Date.now() >= deadline) {
+          throw new Error(`timed out while observing intent ${intentId}`);
+        }
+        await delay(pollIntervalMs);
+        continue;
+      }
+
+      for (const item of events) {
+        if (!item || typeof item !== "object") {
+          continue;
+        }
+        const event = item as Record<string, unknown>;
+        nextSince = maxSeenSeq(nextSince, event);
+        yield event;
+        if (isTerminalIntentEvent(event)) {
+          return;
+        }
+      }
+    }
+  }
+
+  async waitFor(intentId: string, options: WaitForIntentOptions = {}): Promise<Record<string, unknown>> {
+    for await (const event of this.observe(intentId, options)) {
+      if (isTerminalIntentEvent(event)) {
+        return event;
+      }
+    }
+    throw new Error(`intent observation finished without terminal event for ${intentId}`);
   }
 
   async listInbox(options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
@@ -544,6 +703,29 @@ export class AxmeClient {
     });
   }
 
+  private async fetchIntentEventStream(
+    intentId: string,
+    options: {
+      since: number;
+      waitSeconds: number;
+      traceId?: string;
+    },
+  ): Promise<Array<Record<string, unknown>>> {
+    const streamUrl = new URL(`${this.baseUrl}/v1/intents/${intentId}/events/stream`);
+    streamUrl.searchParams.set("since", String(options.since));
+    streamUrl.searchParams.set("wait_seconds", String(options.waitSeconds));
+
+    const response = await this.fetchImpl(streamUrl.toString(), {
+      method: "GET",
+      headers: this.buildHeaders(undefined, options.traceId),
+    });
+    if (!response.ok) {
+      throw await buildHttpError(response);
+    }
+    const body = await response.text();
+    return parseIntentSseEvents(body);
+  }
+
   private async requestJson(
     pathOrUrl: string,
     options: {
@@ -844,4 +1026,58 @@ function matchesJsonType(value: unknown, acceptedTypes: string[]): boolean {
     }
   }
   return false;
+}
+
+function parseIntentSseEvents(body: string): Array<Record<string, unknown>> {
+  const events: Array<Record<string, unknown>> = [];
+  const lines = body.split(/\r?\n/);
+  let currentEvent: string | undefined;
+  let dataLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.length === 0) {
+      if (currentEvent && currentEvent.startsWith("intent.") && dataLines.length > 0) {
+        try {
+          const parsed = JSON.parse(dataLines.join("\n"));
+          if (parsed && typeof parsed === "object") {
+            events.push(parsed as Record<string, unknown>);
+          }
+        } catch {
+          // Ignore malformed stream event payloads and continue processing.
+        }
+      }
+      currentEvent = undefined;
+      dataLines = [];
+      continue;
+    }
+    if (line.startsWith(":")) {
+      continue;
+    }
+    if (line.startsWith("event:")) {
+      currentEvent = line.slice("event:".length).trim();
+      continue;
+    }
+    if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trimStart());
+    }
+  }
+
+  return events;
+}
+
+function maxSeenSeq(nextSince: number, event: Record<string, unknown>): number {
+  const seq = event.seq;
+  if (typeof seq === "number" && Number.isInteger(seq) && seq >= 0) {
+    return Math.max(nextSince, seq);
+  }
+  return nextSince;
+}
+
+function isTerminalIntentEvent(event: Record<string, unknown>): boolean {
+  const status = event.status;
+  if (typeof status === "string" && ["COMPLETED", "FAILED", "CANCELED"].includes(status)) {
+    return true;
+  }
+  const eventType = event.event_type;
+  return typeof eventType === "string" && ["intent.completed", "intent.failed", "intent.canceled"].includes(eventType);
 }

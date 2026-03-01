@@ -50,6 +50,23 @@ const createdIntent = await client.createIntent(
   },
 );
 console.log(await client.getIntent(createdIntent.intent_id as string));
+const sentIntentId = await client.sendIntent(
+  {
+    intent_type: "notify.message.v1",
+    from_agent: "agent://example/sender",
+    to_agent: "agent://example/receiver",
+    payload: { text: "hello again" },
+  },
+  { idempotencyKey: "send-intent-001" },
+);
+console.log(await client.listIntentEvents(sentIntentId, { since: 0 }));
+for await (const event of client.observe(sentIntentId, { since: 0, waitSeconds: 10 })) {
+  console.log(event.event_type, event.status);
+  if (["COMPLETED", "FAILED", "CANCELED"].includes(String(event.status ?? ""))) {
+    break;
+  }
+}
+console.log(await client.waitFor(sentIntentId, { timeoutMs: 30_000 }));
 console.log(await client.listInbox({ ownerAgent: "agent://example/receiver", traceId: "trace-inbox-001" }));
 console.log(
   await client.getInboxThread("11111111-1111-4111-8111-111111111111", { ownerAgent: "agent://example/receiver" }),
