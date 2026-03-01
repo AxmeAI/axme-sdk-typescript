@@ -186,6 +186,158 @@ test("getIntent fetches intent by id", async () => {
   assert.equal(intent.intent_id, intentId);
 });
 
+test("sendIntent returns intent_id", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/intents");
+      assert.equal(init?.method, "POST");
+      return new Response(JSON.stringify({ intent_id: "33333333-3333-4333-8333-333333333333" }), { status: 200 });
+    },
+  );
+
+  const intentId = await client.sendIntent(
+    {
+      intent_type: "notify.message.v1",
+      from_agent: "agent://self",
+      to_agent: "agent://target",
+      payload: { text: "hello" },
+    },
+    { idempotencyKey: "send-1" },
+  );
+  assert.equal(intentId, "33333333-3333-4333-8333-333333333333");
+});
+
+test("sendIntent requires response intent_id", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+  );
+  await assert.rejects(async () => client.sendIntent({ intent_type: "notify.message.v1", from_agent: "agent://self", to_agent: "agent://target", payload: {} }));
+});
+
+test("listIntentEvents requests events with since", async () => {
+  const intentId = "22222222-2222-4222-8222-222222222222";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), `https://api.axme.test/v1/intents/${intentId}/events?since=2`);
+      assert.equal(init?.method, "GET");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          events: [{ intent_id: intentId, seq: 3, event_type: "intent.completed", status: "COMPLETED", at: "2026-02-28T00:00:10Z" }],
+        }),
+        { status: 200 },
+      );
+    },
+  );
+  const eventsResponse = await client.listIntentEvents(intentId, { since: 2 });
+  const events = eventsResponse.events as Array<Record<string, unknown>>;
+  assert.equal(events[0].seq, 3);
+});
+
+test("resolveIntent posts terminal payload", async () => {
+  const intentId = "22222222-2222-4222-8222-222222222222";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), `https://api.axme.test/v1/intents/${intentId}/resolve`);
+      assert.equal(init?.method, "POST");
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      assert.equal(body.status, "COMPLETED");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          intent: { intent_id: intentId, status: "done" },
+          event: { intent_id: intentId, seq: 3, event_type: "intent.completed", status: "COMPLETED" },
+          completion_delivery: { delivered: false, reason: "reply_to_not_set" },
+        }),
+        { status: 200 },
+      );
+    },
+  );
+  const response = await client.resolveIntent(intentId, { status: "COMPLETED", result: { answer: "done" } });
+  assert.equal((response.event as Record<string, unknown>).event_type, "intent.completed");
+});
+
+test("observe prefers stream and yields terminal lifecycle", async () => {
+  const intentId = "22222222-2222-4222-8222-222222222222";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), `https://api.axme.test/v1/intents/${intentId}/events/stream?since=1&wait_seconds=5`);
+      assert.equal(init?.method, "GET");
+      const body = [
+        "id: 2",
+        "event: intent.submitted",
+        "data: {\"intent_id\":\"22222222-2222-4222-8222-222222222222\",\"seq\":2,\"event_type\":\"intent.submitted\",\"status\":\"SUBMITTED\",\"at\":\"2026-02-28T00:00:01Z\"}",
+        "",
+        "id: 3",
+        "event: intent.completed",
+        "data: {\"intent_id\":\"22222222-2222-4222-8222-222222222222\",\"seq\":3,\"event_type\":\"intent.completed\",\"status\":\"COMPLETED\",\"at\":\"2026-02-28T00:00:10Z\"}",
+        "",
+      ].join("\n");
+      return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+    },
+  );
+
+  const observed: Array<Record<string, unknown>> = [];
+  for await (const event of client.observe(intentId, { since: 1, waitSeconds: 5, pollIntervalMs: 0 })) {
+    observed.push(event);
+  }
+  assert.deepEqual(observed.map((event) => event.event_type), ["intent.submitted", "intent.completed"]);
+});
+
+test("observe falls back to polling when stream unavailable", async () => {
+  const intentId = "22222222-2222-4222-8222-222222222222";
+  let streamCalls = 0;
+  let pollCalls = 0;
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input) => {
+      const url = input.toString();
+      if (url.includes("/events/stream")) {
+        streamCalls += 1;
+        return new Response(JSON.stringify({ error: "not found" }), { status: 404 });
+      }
+      pollCalls += 1;
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          events: [
+            { intent_id: intentId, seq: 1, event_type: "intent.created", status: "CREATED", at: "2026-02-28T00:00:00Z" },
+            { intent_id: intentId, seq: 2, event_type: "intent.completed", status: "COMPLETED", at: "2026-02-28T00:00:10Z" },
+          ],
+        }),
+        { status: 200 },
+      );
+    },
+  );
+  const observed: Array<Record<string, unknown>> = [];
+  for await (const event of client.observe(intentId, { pollIntervalMs: 0 })) {
+    observed.push(event);
+  }
+  assert.deepEqual(observed.map((event) => event.event_type), ["intent.created", "intent.completed"]);
+  assert.equal(streamCalls, 1);
+  assert.equal(pollCalls, 1);
+});
+
+test("waitFor rejects when timeout is exceeded", async () => {
+  const intentId = "22222222-2222-4222-8222-222222222222";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input) => {
+      const url = input.toString();
+      if (url.includes("/events/stream")) {
+        return new Response(JSON.stringify({ error: "not found" }), { status: 404 });
+      }
+      return new Response(JSON.stringify({ ok: true, events: [] }), { status: 200 });
+    },
+  );
+  await assert.rejects(async () => client.waitFor(intentId, { timeoutMs: 10, pollIntervalMs: 0 }));
+});
+
 test("listInbox sends owner_agent query and returns payload", async () => {
   const client = new AxmeClient(
     { baseUrl: "https://api.axme.test", apiKey: "token" },
