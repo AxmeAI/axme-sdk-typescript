@@ -48,6 +48,23 @@ console.log(
   }),
 );
 console.log(await client.getCapabilities());
+const invite = await client.createInvite(
+  {
+    owner_agent: "agent://example/receiver",
+    recipient_hint: "Partner A",
+    ttl_seconds: 3600,
+  },
+  { idempotencyKey: "invite-create-001" },
+);
+console.log(invite.token);
+console.log((await client.getInvite(invite.token as string)).status);
+console.log(
+  await client.acceptInvite(
+    invite.token as string,
+    { nick: "@PartnerA.User", display_name: "Partner A" },
+    { idempotencyKey: "invite-accept-001" },
+  ),
+);
 console.log(
   await client.upsertWebhookSubscription({
     callback_url: "https://integrator.example/webhooks/axme",

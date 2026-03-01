@@ -45,6 +45,10 @@ export type DecideApprovalOptions = RequestOptions & {
   idempotencyKey?: string;
 };
 
+export type InviteWriteOptions = RequestOptions & {
+  idempotencyKey?: string;
+};
+
 export type IdempotentOwnerScopedOptions = OwnerScopedOptions & {
   idempotencyKey?: string;
 };
@@ -156,6 +160,41 @@ export class AxmeClient {
       method: "GET",
       retryable: true,
       traceId: options.traceId,
+    });
+  }
+
+  async createInvite(
+    payload: Record<string, unknown>,
+    options: InviteWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/invites/create", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async getInvite(token: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/invites/${token}`, {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async acceptInvite(
+    token: string,
+    payload: Record<string, unknown>,
+    options: InviteWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/invites/${token}/accept`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
     });
   }
 

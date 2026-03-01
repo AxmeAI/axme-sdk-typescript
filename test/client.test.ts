@@ -284,6 +284,116 @@ test("getCapabilities returns capabilities payload", async () => {
   assert.equal((await client.getCapabilities()).ok, true);
 });
 
+test("createInvite sends payload with idempotency header", async () => {
+  const inviteToken = "invite-token-0001";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/invites/create");
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "invite-create-1");
+      assert.equal(
+        init?.body,
+        JSON.stringify({ owner_agent: "agent://owner", recipient_hint: "receiver", ttl_seconds: 3600 }),
+      );
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          token: inviteToken,
+          invite_url: `https://invite.example/${inviteToken}`,
+          owner_agent: "agent://owner",
+          recipient_hint: "receiver",
+          status: "pending",
+          created_at: "2026-02-28T00:00:00Z",
+          expires_at: "2026-03-01T00:00:00Z",
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  assert.equal(
+    (
+      await client.createInvite(
+        { owner_agent: "agent://owner", recipient_hint: "receiver", ttl_seconds: 3600 },
+        { idempotencyKey: "invite-create-1" },
+      )
+    ).token,
+    inviteToken,
+  );
+});
+
+test("getInvite fetches invite details by token", async () => {
+  const inviteToken = "invite-token-0002";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), `https://api.axme.test/v1/invites/${inviteToken}`);
+      assert.equal(init?.method, "GET");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          token: inviteToken,
+          owner_agent: "agent://owner",
+          recipient_hint: "receiver",
+          status: "pending",
+          created_at: "2026-02-28T00:00:00Z",
+          expires_at: "2026-03-01T00:00:00Z",
+          accepted_at: null,
+          accepted_owner_agent: null,
+          nick: null,
+          public_address: null,
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  assert.equal((await client.getInvite(inviteToken)).status, "pending");
+});
+
+test("acceptInvite sends payload and returns accepted status", async () => {
+  const inviteToken = "invite-token-0003";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), `https://api.axme.test/v1/invites/${inviteToken}/accept`);
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "invite-accept-1");
+      assert.equal(init?.body, JSON.stringify({ nick: "@Invite.User", display_name: "Invite User" }));
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          token: inviteToken,
+          status: "accepted",
+          invite_owner_agent: "agent://owner",
+          user_id: "66666666-6666-4666-8666-666666666666",
+          owner_agent: "agent://accepted",
+          nick: "@Invite.User",
+          public_address: "invite.user@ax",
+          display_name: "Invite User",
+          accepted_at: "2026-02-28T00:00:10Z",
+          registry_bind_status: "propagated",
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  assert.equal(
+    (
+      await client.acceptInvite(
+        inviteToken,
+        { nick: "@Invite.User", display_name: "Invite User" },
+        { idempotencyKey: "invite-accept-1" },
+      )
+    ).status,
+    "accepted",
+  );
+});
+
 test("createIntent maps 422 to AxmeValidationError", async () => {
   const client = new AxmeClient(
     { baseUrl: "https://api.axme.test", apiKey: "token" },
