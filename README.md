@@ -82,6 +82,16 @@ console.log(
     { idempotencyKey: "media-finalize-001" },
   ),
 );
+const schema = await client.upsertSchema(
+  {
+    semantic_type: "axme.calendar.schedule.v1",
+    schema_json: { type: "object", required: ["date"], properties: { date: { type: "string" } } },
+    compatibility_mode: "strict",
+  },
+  { idempotencyKey: "schema-upsert-001" },
+);
+console.log(schema.schema);
+console.log(await client.getSchema("axme.calendar.schedule.v1"));
 console.log(
   await client.upsertWebhookSubscription({
     callback_url: "https://integrator.example/webhooks/axme",

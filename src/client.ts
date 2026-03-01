@@ -53,6 +53,10 @@ export type MediaWriteOptions = RequestOptions & {
   idempotencyKey?: string;
 };
 
+export type SchemaWriteOptions = RequestOptions & {
+  idempotencyKey?: string;
+};
+
 export type IdempotentOwnerScopedOptions = OwnerScopedOptions & {
   idempotencyKey?: string;
 };
@@ -233,6 +237,27 @@ export class AxmeClient {
       idempotencyKey: options.idempotencyKey,
       traceId: options.traceId,
       retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async upsertSchema(
+    payload: Record<string, unknown>,
+    options: SchemaWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/schemas", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async getSchema(semanticType: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/schemas/${semanticType}`, {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
     });
   }
 
