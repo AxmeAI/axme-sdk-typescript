@@ -33,13 +33,57 @@ console.log(
     },
   ),
 );
+const createdIntent = await client.createIntent(
+  {
+    intent_type: "notify.message.v1",
+    from_agent: "agent://example/sender",
+    to_agent: "agent://example/receiver",
+    payload: { text: "hello" },
+  },
+  {
+    correlationId: "22222222-2222-2222-2222-222222222222",
+    idempotencyKey: "create-intent-002",
+  },
+);
+console.log(await client.getIntent(createdIntent.intent_id as string));
 console.log(await client.listInbox({ ownerAgent: "agent://example/receiver", traceId: "trace-inbox-001" }));
+console.log(
+  await client.getInboxThread("11111111-1111-4111-8111-111111111111", { ownerAgent: "agent://example/receiver" }),
+);
 console.log(await client.listInboxChanges({ ownerAgent: "agent://example/receiver", limit: 50 }));
 console.log(
   await client.replyInboxThread("11111111-1111-4111-8111-111111111111", "Acknowledged", {
     ownerAgent: "agent://example/receiver",
     idempotencyKey: "reply-001",
   }),
+);
+console.log(
+  await client.delegateInboxThread(
+    "11111111-1111-4111-8111-111111111111",
+    { delegate_to: "agent://example/delegate", note: "handoff" },
+    { ownerAgent: "agent://example/receiver", idempotencyKey: "delegate-001" },
+  ),
+);
+console.log(
+  await client.approveInboxThread(
+    "11111111-1111-4111-8111-111111111111",
+    { comment: "approved" },
+    { ownerAgent: "agent://example/receiver", idempotencyKey: "approve-001" },
+  ),
+);
+console.log(
+  await client.rejectInboxThread(
+    "11111111-1111-4111-8111-111111111111",
+    { comment: "rejected" },
+    { ownerAgent: "agent://example/receiver", idempotencyKey: "reject-001" },
+  ),
+);
+console.log(
+  await client.deleteInboxMessages(
+    "11111111-1111-4111-8111-111111111111",
+    { mode: "self", limit: 1 },
+    { ownerAgent: "agent://example/receiver", idempotencyKey: "delete-001" },
+  ),
 );
 console.log(
   await client.decideApproval("55555555-5555-4555-8555-555555555555", "approve", {
