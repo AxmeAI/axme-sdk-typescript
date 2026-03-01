@@ -6,6 +6,7 @@ export {
   type InviteWriteOptions,
   type MediaWriteOptions,
   type SchemaWriteOptions,
+  type UserWriteOptions,
   type IdempotentOwnerScopedOptions,
   type InboxChangesOptions,
   type OwnerScopedOptions,
