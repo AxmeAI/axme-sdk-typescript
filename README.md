@@ -2,6 +2,10 @@
 
 Official TypeScript SDK for Axme APIs and workflows.
 
+Canonical protocol positioning:
+
+- **AXP is the Intent Protocol (durable execution layer).**
+
 ## Status
 
 Initial v1 skeleton in progress.
@@ -167,6 +171,15 @@ console.log(
     { event_type: "inbox.thread_created", source: "sdk-example", payload: { thread_id: "t-1" } },
     { ownerAgent: "agent://example/receiver" },
   ),
+);
+console.log(await client.mcpInitialize());
+console.log(await client.mcpListTools());
+console.log(
+  await client.mcpCallTool("axme.send", {
+    arguments: { to: "agent://example/receiver", text: "hello from MCP" },
+    ownerAgent: "agent://example/receiver",
+    idempotencyKey: "mcp-send-001",
+  }),
 );
 ```
 
