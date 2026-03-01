@@ -49,6 +49,10 @@ export type InviteWriteOptions = RequestOptions & {
   idempotencyKey?: string;
 };
 
+export type MediaWriteOptions = RequestOptions & {
+  idempotencyKey?: string;
+};
+
 export type IdempotentOwnerScopedOptions = OwnerScopedOptions & {
   idempotencyKey?: string;
 };
@@ -190,6 +194,40 @@ export class AxmeClient {
     options: InviteWriteOptions = {},
   ): Promise<Record<string, unknown>> {
     return this.requestJson(`/v1/invites/${token}/accept`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async createMediaUpload(
+    payload: Record<string, unknown>,
+    options: MediaWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/media/create-upload", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async getMediaUpload(uploadId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/media/${uploadId}`, {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async finalizeMediaUpload(
+    payload: Record<string, unknown>,
+    options: MediaWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/media/finalize-upload", {
       method: "POST",
       body: JSON.stringify(payload),
       idempotencyKey: options.idempotencyKey,
