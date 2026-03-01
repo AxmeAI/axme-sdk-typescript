@@ -57,6 +57,10 @@ export type SchemaWriteOptions = RequestOptions & {
   idempotencyKey?: string;
 };
 
+export type UserWriteOptions = RequestOptions & {
+  idempotencyKey?: string;
+};
+
 export type IdempotentOwnerScopedOptions = OwnerScopedOptions & {
   idempotencyKey?: string;
 };
@@ -258,6 +262,62 @@ export class AxmeClient {
       method: "GET",
       retryable: true,
       traceId: options.traceId,
+    });
+  }
+
+  async registerNick(
+    payload: Record<string, unknown>,
+    options: UserWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/users/register-nick", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async checkNick(nick: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/users/check-nick`);
+    url.searchParams.set("nick", nick);
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async renameNick(payload: Record<string, unknown>, options: UserWriteOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/users/rename-nick", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async getUserProfile(ownerAgent: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/users/profile`);
+    url.searchParams.set("owner_agent", ownerAgent);
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async updateUserProfile(
+    payload: Record<string, unknown>,
+    options: UserWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/users/profile/update", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
     });
   }
 

@@ -92,6 +92,25 @@ const schema = await client.upsertSchema(
 );
 console.log(schema.schema);
 console.log(await client.getSchema("axme.calendar.schedule.v1"));
+const registered = await client.registerNick(
+  { nick: "@partner.user", display_name: "Partner User" },
+  { idempotencyKey: "nick-register-001" },
+);
+console.log(registered.owner_agent);
+console.log(await client.checkNick("@partner.user"));
+console.log(
+  await client.renameNick(
+    { owner_agent: registered.owner_agent as string, nick: "@partner.new" },
+    { idempotencyKey: "nick-rename-001" },
+  ),
+);
+console.log(await client.getUserProfile(registered.owner_agent as string));
+console.log(
+  await client.updateUserProfile(
+    { owner_agent: registered.owner_agent as string, display_name: "Partner User Updated" },
+    { idempotencyKey: "profile-update-001" },
+  ),
+);
 console.log(
   await client.upsertWebhookSubscription({
     callback_url: "https://integrator.example/webhooks/axme",

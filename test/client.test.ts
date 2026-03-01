@@ -606,6 +606,170 @@ test("getSchema fetches schema details by semantic type", async () => {
   assert.equal(schema.semantic_type, semanticType);
 });
 
+test("registerNick sends payload with idempotency header", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/users/register-nick");
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "nick-register-1");
+      assert.equal(init?.body, JSON.stringify({ nick: "@partner.user", display_name: "Partner User" }));
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          owner_agent: "agent://user/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          nick: "@partner.user",
+          public_address: "partner.user@ax",
+          display_name: "Partner User",
+          phone: null,
+          email: null,
+          created_at: "2026-02-28T00:00:00Z",
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  const response = await client.registerNick(
+    { nick: "@partner.user", display_name: "Partner User" },
+    { idempotencyKey: "nick-register-1" },
+  );
+  assert.equal(response.owner_agent, "agent://user/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+});
+
+test("checkNick sends query parameter and returns availability", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/users/check-nick?nick=%40partner.user");
+      assert.equal(init?.method, "GET");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          nick: "@partner.user",
+          normalized_nick: "partner.user",
+          public_address: "partner.user@ax",
+          available: true,
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  const response = await client.checkNick("@partner.user");
+  assert.equal(response.available, true);
+});
+
+test("renameNick sends payload with idempotency header", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/users/rename-nick");
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "nick-rename-1");
+      assert.equal(
+        init?.body,
+        JSON.stringify({ owner_agent: "agent://user/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", nick: "@partner.new" }),
+      );
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          owner_agent: "agent://user/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          nick: "@partner.new",
+          public_address: "partner.new@ax",
+          display_name: "Partner User",
+          phone: null,
+          email: null,
+          renamed_at: "2026-02-28T00:00:01Z",
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  const response = await client.renameNick(
+    { owner_agent: "agent://user/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", nick: "@partner.new" },
+    { idempotencyKey: "nick-rename-1" },
+  );
+  assert.equal(response.nick, "@partner.new");
+});
+
+test("getUserProfile sends owner_agent query parameter", async () => {
+  const ownerAgent = "agent://user/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/users/profile?owner_agent=agent%3A%2F%2Fuser%2Faaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+      assert.equal(init?.method, "GET");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          owner_agent: ownerAgent,
+          nick: "@partner.new",
+          normalized_nick: "partner.new",
+          public_address: "partner.new@ax",
+          display_name: "Partner User",
+          phone: null,
+          email: null,
+          updated_at: "2026-02-28T00:00:02Z",
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  const response = await client.getUserProfile(ownerAgent);
+  assert.equal(response.owner_agent, ownerAgent);
+});
+
+test("updateUserProfile sends payload with idempotency header", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/users/profile/update");
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "profile-update-1");
+      assert.equal(
+        init?.body,
+        JSON.stringify({
+          owner_agent: "agent://user/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          display_name: "Partner Updated",
+        }),
+      );
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          owner_agent: "agent://user/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          nick: "@partner.new",
+          normalized_nick: "partner.new",
+          public_address: "partner.new@ax",
+          display_name: "Partner Updated",
+          phone: null,
+          email: null,
+          updated_at: "2026-02-28T00:00:03Z",
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  const response = await client.updateUserProfile(
+    {
+      owner_agent: "agent://user/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      display_name: "Partner Updated",
+    },
+    { idempotencyKey: "profile-update-1" },
+  );
+  assert.equal(response.display_name, "Partner Updated");
+});
+
 test("createIntent maps 422 to AxmeValidationError", async () => {
   const client = new AxmeClient(
     { baseUrl: "https://api.axme.test", apiKey: "token" },
