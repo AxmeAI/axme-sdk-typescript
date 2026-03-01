@@ -155,6 +155,37 @@ test("createIntent throws when payload correlation_id mismatches option", async 
   );
 });
 
+test("getIntent fetches intent by id", async () => {
+  const intentId = "22222222-2222-4222-8222-222222222222";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), `https://api.axme.test/v1/intents/${intentId}`);
+      assert.equal(init?.method, "GET");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          intent: {
+            intent_id: intentId,
+            status: "accepted",
+            created_at: "2026-02-28T00:00:00Z",
+            intent_type: "notify.message.v1",
+            correlation_id: "11111111-1111-1111-1111-111111111111",
+            from_agent: "agent://self",
+            to_agent: "agent://target",
+            payload: { text: "hello" },
+          },
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  const response = await client.getIntent(intentId);
+  const intent = response.intent as Record<string, unknown>;
+  assert.equal(intent.intent_id, intentId);
+});
+
 test("listInbox sends owner_agent query and returns payload", async () => {
   const client = new AxmeClient(
     { baseUrl: "https://api.axme.test", apiKey: "token" },
@@ -231,6 +262,104 @@ test("listInboxChanges sends pagination query params", async () => {
     next_cursor: null,
     has_more: false,
   });
+});
+
+test("delegateInboxThread sends payload with owner scope", async () => {
+  const threadId = "11111111-1111-4111-8111-111111111111";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(
+        input.toString(),
+        "https://api.axme.test/v1/inbox/11111111-1111-4111-8111-111111111111/delegate?owner_agent=agent%3A%2F%2Fowner",
+      );
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "delegate-1");
+      assert.equal(init?.body, JSON.stringify({ delegate_to: "agent://example/delegate", note: "handoff" }));
+      return new Response(JSON.stringify({ ok: true, thread: THREAD_PAYLOAD }), { status: 200 });
+    },
+  );
+
+  assert.deepEqual(
+    await client.delegateInboxThread(threadId, { delegate_to: "agent://example/delegate", note: "handoff" }, {
+      ownerAgent: "agent://owner",
+      idempotencyKey: "delegate-1",
+    }),
+    { ok: true, thread: THREAD_PAYLOAD },
+  );
+});
+
+test("approveInboxThread sends decision payload", async () => {
+  const threadId = "11111111-1111-4111-8111-111111111111";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(
+        input.toString(),
+        "https://api.axme.test/v1/inbox/11111111-1111-4111-8111-111111111111/approve?owner_agent=agent%3A%2F%2Fowner",
+      );
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "approve-1");
+      assert.equal(init?.body, JSON.stringify({ comment: "approved" }));
+      return new Response(JSON.stringify({ ok: true, thread: THREAD_PAYLOAD }), { status: 200 });
+    },
+  );
+
+  assert.deepEqual(
+    await client.approveInboxThread(threadId, { comment: "approved" }, { ownerAgent: "agent://owner", idempotencyKey: "approve-1" }),
+    { ok: true, thread: THREAD_PAYLOAD },
+  );
+});
+
+test("rejectInboxThread sends decision payload", async () => {
+  const threadId = "11111111-1111-4111-8111-111111111111";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(
+        input.toString(),
+        "https://api.axme.test/v1/inbox/11111111-1111-4111-8111-111111111111/reject?owner_agent=agent%3A%2F%2Fowner",
+      );
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "reject-1");
+      assert.equal(init?.body, JSON.stringify({ comment: "rejected" }));
+      return new Response(JSON.stringify({ ok: true, thread: THREAD_PAYLOAD }), { status: 200 });
+    },
+  );
+
+  assert.deepEqual(
+    await client.rejectInboxThread(threadId, { comment: "rejected" }, { ownerAgent: "agent://owner", idempotencyKey: "reject-1" }),
+    { ok: true, thread: THREAD_PAYLOAD },
+  );
+});
+
+test("deleteInboxMessages sends delete payload", async () => {
+  const threadId = "11111111-1111-4111-8111-111111111111";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(
+        input.toString(),
+        "https://api.axme.test/v1/inbox/11111111-1111-4111-8111-111111111111/messages/delete?owner_agent=agent%3A%2F%2Fowner",
+      );
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "delete-1");
+      assert.equal(init?.body, JSON.stringify({ mode: "self", limit: 1 }));
+      return new Response(
+        JSON.stringify({ ok: true, thread: THREAD_PAYLOAD, mode: "self", deleted_count: 1, message_ids: ["msg-1"] }),
+        { status: 200 },
+      );
+    },
+  );
+
+  assert.deepEqual(
+    await client.deleteInboxMessages(threadId, { mode: "self", limit: 1 }, { ownerAgent: "agent://owner", idempotencyKey: "delete-1" }),
+    { ok: true, thread: THREAD_PAYLOAD, mode: "self", deleted_count: 1, message_ids: ["msg-1"] },
+  );
 });
 
 test("decideApproval sends decision payload and idempotency header", async () => {

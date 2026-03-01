@@ -111,6 +111,14 @@ export class AxmeClient {
     });
   }
 
+  async getIntent(intentId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/intents/${intentId}`, {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
   async listInbox(options: OwnerScopedOptions = {}): Promise<Record<string, unknown>> {
     return this.requestJson(this.buildUrl("/v1/inbox", options), {
       method: "GET",
@@ -146,6 +154,62 @@ export class AxmeClient {
       method: "GET",
       retryable: true,
       traceId: options.traceId,
+    });
+  }
+
+  async delegateInboxThread(
+    threadId: string,
+    payload: Record<string, unknown>,
+    options: IdempotentOwnerScopedOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(this.buildUrl(`/v1/inbox/${threadId}/delegate`, options), {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async approveInboxThread(
+    threadId: string,
+    payload: Record<string, unknown>,
+    options: IdempotentOwnerScopedOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(this.buildUrl(`/v1/inbox/${threadId}/approve`, options), {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async rejectInboxThread(
+    threadId: string,
+    payload: Record<string, unknown>,
+    options: IdempotentOwnerScopedOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(this.buildUrl(`/v1/inbox/${threadId}/reject`, options), {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async deleteInboxMessages(
+    threadId: string,
+    payload: Record<string, unknown>,
+    options: IdempotentOwnerScopedOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(this.buildUrl(`/v1/inbox/${threadId}/messages/delete`, options), {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
     });
   }
 
