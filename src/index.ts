@@ -4,6 +4,7 @@ export {
   type CreateIntentOptions,
   type DecideApprovalOptions,
   type InviteWriteOptions,
+  type MediaWriteOptions,
   type IdempotentOwnerScopedOptions,
   type InboxChangesOptions,
   type OwnerScopedOptions,

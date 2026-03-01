@@ -394,6 +394,136 @@ test("acceptInvite sends payload and returns accepted status", async () => {
   );
 });
 
+test("createMediaUpload sends payload with idempotency header", async () => {
+  const uploadId = "77777777-7777-4777-8777-777777777777";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/media/create-upload");
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "media-create-1");
+      assert.equal(
+        init?.body,
+        JSON.stringify({
+          owner_agent: "agent://owner",
+          filename: "contract.pdf",
+          mime_type: "application/pdf",
+          size_bytes: 12345,
+        }),
+      );
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          upload_id: uploadId,
+          owner_agent: "agent://owner",
+          bucket: "axme-media",
+          object_path: "agent-owner/contract.pdf",
+          upload_url: "https://upload.example/media/1",
+          status: "pending",
+          expires_at: "2026-03-01T00:00:00Z",
+          max_size_bytes: 10485760,
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  assert.equal(
+    (
+      await client.createMediaUpload(
+        {
+          owner_agent: "agent://owner",
+          filename: "contract.pdf",
+          mime_type: "application/pdf",
+          size_bytes: 12345,
+        },
+        { idempotencyKey: "media-create-1" },
+      )
+    ).upload_id,
+    uploadId,
+  );
+});
+
+test("getMediaUpload fetches media upload details", async () => {
+  const uploadId = "77777777-7777-4777-8777-777777777777";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), `https://api.axme.test/v1/media/${uploadId}`);
+      assert.equal(init?.method, "GET");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          upload: {
+            upload_id: uploadId,
+            owner_agent: "agent://owner",
+            bucket: "axme-media",
+            object_path: "agent-owner/contract.pdf",
+            mime_type: "application/pdf",
+            filename: "contract.pdf",
+            size_bytes: 12345,
+            sha256: null,
+            status: "pending",
+            created_at: "2026-02-28T00:00:00Z",
+            expires_at: "2026-03-01T00:00:00Z",
+            finalized_at: null,
+            download_url: null,
+            preview_url: null,
+          },
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  const mediaGetResponse = await client.getMediaUpload(uploadId);
+  const upload = mediaGetResponse.upload as Record<string, unknown>;
+  assert.equal(upload.status, "pending");
+});
+
+test("finalizeMediaUpload sends payload and returns ready status", async () => {
+  const uploadId = "77777777-7777-4777-8777-777777777777";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/media/finalize-upload");
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "media-finalize-1");
+      assert.equal(init?.body, JSON.stringify({ upload_id: uploadId, size_bytes: 12345 }));
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          upload_id: uploadId,
+          owner_agent: "agent://owner",
+          bucket: "axme-media",
+          object_path: "agent-owner/contract.pdf",
+          mime_type: "application/pdf",
+          size_bytes: 12345,
+          sha256: null,
+          status: "ready",
+          finalized_at: "2026-02-28T00:00:10Z",
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  assert.equal(
+    (
+      await client.finalizeMediaUpload(
+        {
+          upload_id: uploadId,
+          size_bytes: 12345,
+        },
+        { idempotencyKey: "media-finalize-1" },
+      )
+    ).status,
+    "ready",
+  );
+});
+
 test("createIntent maps 422 to AxmeValidationError", async () => {
   const client = new AxmeClient(
     { baseUrl: "https://api.axme.test", apiKey: "token" },

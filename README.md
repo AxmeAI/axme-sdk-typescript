@@ -65,6 +65,23 @@ console.log(
     { idempotencyKey: "invite-accept-001" },
   ),
 );
+const mediaUpload = await client.createMediaUpload(
+  {
+    owner_agent: "agent://example/receiver",
+    filename: "contract.pdf",
+    mime_type: "application/pdf",
+    size_bytes: 12345,
+  },
+  { idempotencyKey: "media-create-001" },
+);
+console.log(mediaUpload.upload_id);
+console.log((await client.getMediaUpload(mediaUpload.upload_id as string)).upload);
+console.log(
+  await client.finalizeMediaUpload(
+    { upload_id: mediaUpload.upload_id as string, size_bytes: 12345 },
+    { idempotencyKey: "media-finalize-001" },
+  ),
+);
 console.log(
   await client.upsertWebhookSubscription({
     callback_url: "https://integrator.example/webhooks/axme",
