@@ -524,6 +524,88 @@ test("finalizeMediaUpload sends payload and returns ready status", async () => {
   );
 });
 
+test("upsertSchema sends payload and returns schema metadata", async () => {
+  const semanticType = "axme.calendar.schedule.v1";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/schemas");
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "schema-upsert-1");
+      assert.equal(
+        init?.body,
+        JSON.stringify({
+          semantic_type: semanticType,
+          schema_json: { type: "object", required: ["date"], properties: { date: { type: "string" } } },
+          compatibility_mode: "strict",
+        }),
+      );
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          schema: {
+            semantic_type: semanticType,
+            schema_ref: `schema://${semanticType}`,
+            schema_hash: "a".repeat(64),
+            compatibility_mode: "strict",
+            scope: "tenant",
+            owner_agent: "agent://owner",
+            active: true,
+            created_at: "2026-02-28T00:00:00Z",
+            updated_at: "2026-02-28T00:00:01Z",
+          },
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  const response = await client.upsertSchema(
+    {
+      semantic_type: semanticType,
+      schema_json: { type: "object", required: ["date"], properties: { date: { type: "string" } } },
+      compatibility_mode: "strict",
+    },
+    { idempotencyKey: "schema-upsert-1" },
+  );
+  const schema = response.schema as Record<string, unknown>;
+  assert.equal(schema.semantic_type, semanticType);
+});
+
+test("getSchema fetches schema details by semantic type", async () => {
+  const semanticType = "axme.calendar.schedule.v1";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), `https://api.axme.test/v1/schemas/${semanticType}`);
+      assert.equal(init?.method, "GET");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          schema: {
+            semantic_type: semanticType,
+            schema_ref: `schema://${semanticType}`,
+            schema_hash: "b".repeat(64),
+            compatibility_mode: "strict",
+            scope: "tenant",
+            owner_agent: "agent://owner",
+            active: true,
+            schema_json: { type: "object", properties: { date: { type: "string" } } },
+            created_at: "2026-02-28T00:00:00Z",
+            updated_at: "2026-02-28T00:00:01Z",
+          },
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  const response = await client.getSchema(semanticType);
+  const schema = response.schema as Record<string, unknown>;
+  assert.equal(schema.semantic_type, semanticType);
+});
+
 test("createIntent maps 422 to AxmeValidationError", async () => {
   const client = new AxmeClient(
     { baseUrl: "https://api.axme.test", apiKey: "token" },
