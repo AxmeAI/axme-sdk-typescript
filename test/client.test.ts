@@ -1093,6 +1093,89 @@ test("listInbox maps 429 to AxmeRateLimitError and parses retry-after", async ()
   );
 });
 
+test("createServiceAccount sends payload", async () => {
+  const orgId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const workspaceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/service-accounts");
+      assert.equal(init?.method, "POST");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          service_account: {
+            service_account_id: "sa_123",
+            org_id: orgId,
+            workspace_id: workspaceId,
+          },
+        }),
+        { status: 200 },
+      );
+    },
+  );
+
+  const response = await client.createServiceAccount({
+    org_id: orgId,
+    workspace_id: workspaceId,
+    name: "sdk-runner",
+    created_by_actor_id: "actor_sdk",
+  });
+  assert.equal((response.service_account as Record<string, unknown>).service_account_id, "sa_123");
+});
+
+test("listServiceAccounts and getServiceAccount use enterprise endpoints", async () => {
+  const orgId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const workspaceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const serviceAccountId = "sa_abc";
+  let call = 0;
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      call += 1;
+      assert.equal(init?.method, "GET");
+      if (call === 1) {
+        assert.equal(
+          input.toString(),
+          `https://api.axme.test/v1/service-accounts?org_id=${encodeURIComponent(orgId)}&workspace_id=${encodeURIComponent(workspaceId)}`,
+        );
+        return new Response(JSON.stringify({ ok: true, service_accounts: [{ service_account_id: serviceAccountId }] }), { status: 200 });
+      }
+      assert.equal(input.toString(), `https://api.axme.test/v1/service-accounts/${serviceAccountId}`);
+      return new Response(JSON.stringify({ ok: true, service_account: { service_account_id: serviceAccountId } }), { status: 200 });
+    },
+  );
+
+  const listed = await client.listServiceAccounts({ orgId, workspaceId });
+  assert.equal(((listed.service_accounts as Array<Record<string, unknown>>)[0]).service_account_id, serviceAccountId);
+  const fetched = await client.getServiceAccount(serviceAccountId);
+  assert.equal((fetched.service_account as Record<string, unknown>).service_account_id, serviceAccountId);
+});
+
+test("createServiceAccountKey and revokeServiceAccountKey hit key lifecycle endpoints", async () => {
+  const serviceAccountId = "sa_abc";
+  const keyId = "sak_abc";
+  let call = 0;
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      call += 1;
+      assert.equal(init?.method, "POST");
+      if (call === 1) {
+        assert.equal(input.toString(), `https://api.axme.test/v1/service-accounts/${serviceAccountId}/keys`);
+        return new Response(JSON.stringify({ ok: true, key: { key_id: keyId, status: "active" } }), { status: 200 });
+      }
+      assert.equal(input.toString(), `https://api.axme.test/v1/service-accounts/${serviceAccountId}/keys/${keyId}/revoke`);
+      return new Response(JSON.stringify({ ok: true, key: { key_id: keyId, status: "revoked" } }), { status: 200 });
+    },
+  );
+
+  const keyCreated = await client.createServiceAccountKey(serviceAccountId, { created_by_actor_id: "actor_sdk" });
+  assert.equal((keyCreated.key as Record<string, unknown>).key_id, keyId);
+  const keyRevoked = await client.revokeServiceAccountKey(serviceAccountId, keyId);
+  assert.equal((keyRevoked.key as Record<string, unknown>).status, "revoked");
+});
+
 test("upsertWebhookSubscription sends payload with idempotency header", async () => {
   const client = new AxmeClient(
     { baseUrl: "https://api.axme.test", apiKey: "token" },
