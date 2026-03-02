@@ -1176,6 +1176,112 @@ test("createServiceAccountKey and revokeServiceAccountKey hit key lifecycle endp
   assert.equal((keyRevoked.key as Record<string, unknown>).status, "revoked");
 });
 
+test("enterprise Track F family methods are exposed by SDK", async () => {
+  const orgId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const workspaceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const memberId = "mem_123";
+  const accessRequestId = "ar_123";
+  const principalId = "prn_123";
+  const aliasId = "als_123";
+  const routeId = "rte_123";
+  const bindingId = "bnd_123";
+  const deliveryId = "dlv_123";
+  const invoiceId = "inv_123";
+  const calls: Array<string> = [];
+
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      const method = String(init?.method ?? "GET");
+      const path = new URL(input.toString()).pathname;
+      calls.push(`${method} ${path}`);
+      if (method === "POST" && path === "/v1/organizations") return new Response(JSON.stringify({ ok: true, organization: { org_id: orgId } }), { status: 200 });
+      if (method === "GET" && path === `/v1/organizations/${orgId}`) return new Response(JSON.stringify({ ok: true, organization: { org_id: orgId } }), { status: 200 });
+      if (method === "PATCH" && path === `/v1/organizations/${orgId}`) return new Response(JSON.stringify({ ok: true, organization: { org_id: orgId } }), { status: 200 });
+      if (method === "POST" && path === `/v1/organizations/${orgId}/workspaces`) return new Response(JSON.stringify({ ok: true, workspace: { workspace_id: workspaceId } }), { status: 200 });
+      if (method === "GET" && path === `/v1/organizations/${orgId}/workspaces`) return new Response(JSON.stringify({ ok: true, workspaces: [{ workspace_id: workspaceId }] }), { status: 200 });
+      if (method === "PATCH" && path === `/v1/organizations/${orgId}/workspaces/${workspaceId}`) return new Response(JSON.stringify({ ok: true, workspace: { workspace_id: workspaceId } }), { status: 200 });
+      if (method === "GET" && path === `/v1/organizations/${orgId}/members`) return new Response(JSON.stringify({ ok: true, members: [{ member_id: memberId }] }), { status: 200 });
+      if (method === "POST" && path === `/v1/organizations/${orgId}/members`) return new Response(JSON.stringify({ ok: true, member: { member_id: memberId } }), { status: 200 });
+      if (method === "PATCH" && path === `/v1/organizations/${orgId}/members/${memberId}`) return new Response(JSON.stringify({ ok: true, member: { member_id: memberId } }), { status: 200 });
+      if (method === "DELETE" && path === `/v1/organizations/${orgId}/members/${memberId}`) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      if (method === "POST" && path === "/v1/access-requests") return new Response(JSON.stringify({ ok: true, access_request: { access_request_id: accessRequestId } }), { status: 200 });
+      if (method === "GET" && path === "/v1/access-requests") return new Response(JSON.stringify({ ok: true, access_requests: [{ access_request_id: accessRequestId }] }), { status: 200 });
+      if (method === "GET" && path === `/v1/access-requests/${accessRequestId}`) return new Response(JSON.stringify({ ok: true, access_request: { access_request_id: accessRequestId } }), { status: 200 });
+      if (method === "POST" && path === `/v1/access-requests/${accessRequestId}/review`) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      if (method === "PATCH" && path === "/v1/quotas") return new Response(JSON.stringify({ ok: true, quota_policy: { org_id: orgId } }), { status: 200 });
+      if (method === "GET" && path === "/v1/quotas") return new Response(JSON.stringify({ ok: true, quota_policy: { org_id: orgId } }), { status: 200 });
+      if (method === "GET" && path === "/v1/usage/summary") return new Response(JSON.stringify({ ok: true, summary: { org_id: orgId } }), { status: 200 });
+      if (method === "GET" && path === "/v1/usage/timeseries") return new Response(JSON.stringify({ ok: true, series: { org_id: orgId } }), { status: 200 });
+      if (method === "POST" && path === "/v1/principals") return new Response(JSON.stringify({ ok: true, principal: { principal_id: principalId } }), { status: 200 });
+      if (method === "GET" && path === `/v1/principals/${principalId}`) return new Response(JSON.stringify({ ok: true, principal: { principal_id: principalId } }), { status: 200 });
+      if (method === "POST" && path === "/v1/aliases") return new Response(JSON.stringify({ ok: true, alias: { alias_id: aliasId } }), { status: 200 });
+      if (method === "GET" && path === "/v1/aliases") return new Response(JSON.stringify({ ok: true, aliases: [{ alias_id: aliasId }] }), { status: 200 });
+      if (method === "GET" && path === "/v1/aliases/resolve") return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      if (method === "POST" && path === `/v1/aliases/${aliasId}/revoke`) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      if (method === "POST" && path === "/v1/routing/endpoints") return new Response(JSON.stringify({ ok: true, route: { route_id: routeId } }), { status: 200 });
+      if (method === "GET" && path === "/v1/routing/endpoints") return new Response(JSON.stringify({ ok: true, routes: [{ route_id: routeId }] }), { status: 200 });
+      if (method === "PATCH" && path === `/v1/routing/endpoints/${routeId}`) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      if (method === "DELETE" && path === `/v1/routing/endpoints/${routeId}`) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      if (method === "POST" && path === "/v1/routing/resolve") return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      if (method === "POST" && path === "/v1/transports/bindings") return new Response(JSON.stringify({ ok: true, binding: { binding_id: bindingId } }), { status: 200 });
+      if (method === "GET" && path === "/v1/transports/bindings") return new Response(JSON.stringify({ ok: true, bindings: [{ binding_id: bindingId }] }), { status: 200 });
+      if (method === "DELETE" && path === `/v1/transports/bindings/${bindingId}`) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      if (method === "POST" && path === "/v1/deliveries") return new Response(JSON.stringify({ ok: true, delivery: { delivery_id: deliveryId } }), { status: 200 });
+      if (method === "GET" && path === "/v1/deliveries") return new Response(JSON.stringify({ ok: true, deliveries: [{ delivery_id: deliveryId }] }), { status: 200 });
+      if (method === "GET" && path === `/v1/deliveries/${deliveryId}`) return new Response(JSON.stringify({ ok: true, delivery: { delivery_id: deliveryId } }), { status: 200 });
+      if (method === "POST" && path === `/v1/deliveries/${deliveryId}/replay`) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      if (method === "PATCH" && path === "/v1/billing/plan") return new Response(JSON.stringify({ ok: true, billing_plan: { org_id: orgId } }), { status: 200 });
+      if (method === "GET" && path === "/v1/billing/plan") return new Response(JSON.stringify({ ok: true, billing_plan: { org_id: orgId } }), { status: 200 });
+      if (method === "GET" && path === "/v1/billing/invoices") return new Response(JSON.stringify({ ok: true, invoices: [{ invoice_id: invoiceId }] }), { status: 200 });
+      if (method === "GET" && path === `/v1/billing/invoices/${invoiceId}`) return new Response(JSON.stringify({ ok: true, invoice: { invoice_id: invoiceId } }), { status: 200 });
+      throw new Error(`unexpected request ${method} ${path}`);
+    },
+  );
+
+  assert.equal((await client.createOrganization({ org_id: orgId, name: "Acme" })).ok, true);
+  assert.equal((await client.getOrganization(orgId)).ok, true);
+  assert.equal((await client.updateOrganization(orgId, { name: "Acme Updated" })).ok, true);
+  assert.equal((await client.createWorkspace(orgId, { workspace_id: workspaceId, name: "Prod", environment: "production" })).ok, true);
+  assert.equal((await client.listWorkspaces(orgId)).ok, true);
+  assert.equal((await client.updateWorkspace(orgId, workspaceId, { name: "Production" })).ok, true);
+  assert.equal((await client.listOrganizationMembers(orgId, { workspaceId })).ok, true);
+  assert.equal((await client.addOrganizationMember(orgId, { actor_id: "actor_member", role: "member", workspace_id: workspaceId })).ok, true);
+  assert.equal((await client.updateOrganizationMember(orgId, memberId, { status: "suspended" })).ok, true);
+  assert.equal((await client.removeOrganizationMember(orgId, memberId)).ok, true);
+  assert.equal((await client.createAccessRequest({ request_type: "workspace_join", requester_actor_id: "actor_member" })).ok, true);
+  assert.equal((await client.listAccessRequests({ orgId, workspaceId, state: "pending" })).ok, true);
+  assert.equal((await client.getAccessRequest(accessRequestId)).ok, true);
+  assert.equal((await client.reviewAccessRequest(accessRequestId, { decision: "approve", reviewer_actor_id: "actor_admin" })).ok, true);
+  assert.equal((await client.updateQuota({ org_id: orgId, workspace_id: workspaceId, dimensions: {}, overage_mode: "block", updated_by_actor_id: "actor_admin" })).ok, true);
+  assert.equal((await client.getQuota(orgId, workspaceId)).ok, true);
+  assert.equal((await client.getUsageSummary(orgId, workspaceId)).ok, true);
+  assert.equal((await client.getUsageTimeseries(orgId, workspaceId)).ok, true);
+  assert.equal((await client.createPrincipal({ org_id: orgId, workspace_id: workspaceId, principal_type: "service_agent" })).ok, true);
+  assert.equal((await client.getPrincipal(principalId)).ok, true);
+  assert.equal((await client.bindAlias({ principal_id: principalId, alias: "agent://acme/billing", alias_type: "service" })).ok, true);
+  assert.equal((await client.listAliases(orgId, workspaceId)).ok, true);
+  assert.equal((await client.resolveAlias(orgId, workspaceId, "agent://acme/billing")).ok, true);
+  assert.equal((await client.revokeAlias(aliasId)).ok, true);
+  assert.equal((await client.registerRoutingEndpoint({ principal_id: principalId, transport_type: "http", endpoint_url: "https://example", auth_mode: "jwt" })).ok, true);
+  assert.equal((await client.listRoutingEndpoints(orgId, workspaceId)).ok, true);
+  assert.equal((await client.updateRoutingEndpoint(routeId, { priority: 1 })).ok, true);
+  assert.equal((await client.removeRoutingEndpoint(routeId)).ok, true);
+  assert.equal((await client.resolveRouting({ org_id: orgId, workspace_id: workspaceId, principal_id: principalId })).ok, true);
+  assert.equal((await client.upsertTransportBinding({ principal_id: principalId, transport_type: "http", transport_handle: "https://example" })).ok, true);
+  assert.equal((await client.listTransportBindings(orgId, workspaceId)).ok, true);
+  assert.equal((await client.removeTransportBinding(bindingId)).ok, true);
+  assert.equal((await client.submitDelivery({ org_id: orgId, workspace_id: workspaceId, principal_id: principalId, payload: { event: "test" } })).ok, true);
+  assert.equal((await client.listDeliveries(orgId, workspaceId)).ok, true);
+  assert.equal((await client.getDelivery(deliveryId)).ok, true);
+  assert.equal((await client.replayDelivery(deliveryId)).ok, true);
+  assert.equal((await client.updateBillingPlan({ org_id: orgId, workspace_id: workspaceId, plan_code: "enterprise", currency: "USD", monthly_commit_minor: 100, overage_unit_price_minor: 1, updated_by_actor_id: "actor_admin" })).ok, true);
+  assert.equal((await client.getBillingPlan(orgId, workspaceId)).ok, true);
+  assert.equal((await client.listBillingInvoices(orgId, workspaceId)).ok, true);
+  assert.equal((await client.getBillingInvoice(invoiceId)).ok, true);
+  assert.equal(calls.length, 40);
+});
+
 test("upsertWebhookSubscription sends payload with idempotency header", async () => {
   const client = new AxmeClient(
     { baseUrl: "https://api.axme.test", apiKey: "token" },

@@ -719,6 +719,505 @@ export class AxmeClient {
     });
   }
 
+  async createOrganization(
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/organizations", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async getOrganization(orgId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/organizations/${orgId}`, {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async updateOrganization(
+    orgId: string,
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/organizations/${orgId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async createWorkspace(
+    orgId: string,
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/organizations/${orgId}/workspaces`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async listWorkspaces(orgId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/organizations/${orgId}/workspaces`, {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async updateWorkspace(
+    orgId: string,
+    workspaceId: string,
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/organizations/${orgId}/workspaces/${workspaceId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async listOrganizationMembers(
+    orgId: string,
+    options: RequestOptions & { workspaceId?: string } = {},
+  ): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/organizations/${orgId}/members`);
+    if (options.workspaceId) {
+      url.searchParams.set("workspace_id", options.workspaceId);
+    }
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async addOrganizationMember(
+    orgId: string,
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/organizations/${orgId}/members`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async updateOrganizationMember(
+    orgId: string,
+    memberId: string,
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/organizations/${orgId}/members/${memberId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async removeOrganizationMember(orgId: string, memberId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/organizations/${orgId}/members/${memberId}`, {
+      method: "DELETE",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async createAccessRequest(
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/access-requests", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async listAccessRequests(
+    options: RequestOptions & { orgId?: string; workspaceId?: string; state?: string } = {},
+  ): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/access-requests`);
+    if (options.orgId) {
+      url.searchParams.set("org_id", options.orgId);
+    }
+    if (options.workspaceId) {
+      url.searchParams.set("workspace_id", options.workspaceId);
+    }
+    if (options.state) {
+      url.searchParams.set("state", options.state);
+    }
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async getAccessRequest(accessRequestId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/access-requests/${accessRequestId}`, {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async reviewAccessRequest(
+    accessRequestId: string,
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/access-requests/${accessRequestId}/review`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async updateQuota(
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/quotas", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async getQuota(orgId: string, workspaceId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/quotas`);
+    url.searchParams.set("org_id", orgId);
+    url.searchParams.set("workspace_id", workspaceId);
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async getUsageSummary(
+    orgId: string,
+    workspaceId: string,
+    options: RequestOptions & { window?: string } = {},
+  ): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/usage/summary`);
+    url.searchParams.set("org_id", orgId);
+    url.searchParams.set("workspace_id", workspaceId);
+    if (options.window) {
+      url.searchParams.set("window", options.window);
+    }
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async getUsageTimeseries(
+    orgId: string,
+    workspaceId: string,
+    options: RequestOptions & { windowDays?: number } = {},
+  ): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/usage/timeseries`);
+    url.searchParams.set("org_id", orgId);
+    url.searchParams.set("workspace_id", workspaceId);
+    if (typeof options.windowDays === "number") {
+      url.searchParams.set("window_days", String(options.windowDays));
+    }
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async createPrincipal(
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/principals", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async getPrincipal(principalId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/principals/${principalId}`, {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async bindAlias(payload: Record<string, unknown>, options: ServiceAccountWriteOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/aliases", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async listAliases(orgId: string, workspaceId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/aliases`);
+    url.searchParams.set("org_id", orgId);
+    url.searchParams.set("workspace_id", workspaceId);
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async resolveAlias(
+    orgId: string,
+    workspaceId: string,
+    alias: string,
+    options: RequestOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/aliases/resolve`);
+    url.searchParams.set("org_id", orgId);
+    url.searchParams.set("workspace_id", workspaceId);
+    url.searchParams.set("alias", alias);
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async revokeAlias(aliasId: string, options: ServiceAccountWriteOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/aliases/${aliasId}/revoke`, {
+      method: "POST",
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async registerRoutingEndpoint(
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/routing/endpoints", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async listRoutingEndpoints(orgId: string, workspaceId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/routing/endpoints`);
+    url.searchParams.set("org_id", orgId);
+    url.searchParams.set("workspace_id", workspaceId);
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async updateRoutingEndpoint(
+    routeId: string,
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/routing/endpoints/${routeId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async removeRoutingEndpoint(routeId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/routing/endpoints/${routeId}`, {
+      method: "DELETE",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async resolveRouting(
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/routing/resolve", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async upsertTransportBinding(
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/transports/bindings", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async listTransportBindings(orgId: string, workspaceId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/transports/bindings`);
+    url.searchParams.set("org_id", orgId);
+    url.searchParams.set("workspace_id", workspaceId);
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async removeTransportBinding(bindingId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/transports/bindings/${bindingId}`, {
+      method: "DELETE",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async submitDelivery(
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/deliveries", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async listDeliveries(
+    orgId: string,
+    workspaceId: string,
+    options: RequestOptions & { principalId?: string; status?: string } = {},
+  ): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/deliveries`);
+    url.searchParams.set("org_id", orgId);
+    url.searchParams.set("workspace_id", workspaceId);
+    if (options.principalId) {
+      url.searchParams.set("principal_id", options.principalId);
+    }
+    if (options.status) {
+      url.searchParams.set("status", options.status);
+    }
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async getDelivery(deliveryId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/deliveries/${deliveryId}`, {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async replayDelivery(deliveryId: string, options: ServiceAccountWriteOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/deliveries/${deliveryId}/replay`, {
+      method: "POST",
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async updateBillingPlan(
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/billing/plan", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async getBillingPlan(orgId: string, workspaceId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/billing/plan`);
+    url.searchParams.set("org_id", orgId);
+    url.searchParams.set("workspace_id", workspaceId);
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async listBillingInvoices(
+    orgId: string,
+    workspaceId: string,
+    options: RequestOptions & { status?: string } = {},
+  ): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/billing/invoices`);
+    url.searchParams.set("org_id", orgId);
+    url.searchParams.set("workspace_id", workspaceId);
+    if (options.status) {
+      url.searchParams.set("status", options.status);
+    }
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async getBillingInvoice(invoiceId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/billing/invoices/${invoiceId}`, {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
   async upsertWebhookSubscription(
     payload: Record<string, unknown>,
     options: WebhookSubscriptionUpsertOptions = {},
