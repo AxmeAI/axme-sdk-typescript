@@ -167,7 +167,7 @@ test("getIntent fetches intent by id", async () => {
           ok: true,
           intent: {
             intent_id: intentId,
-            status: "accepted",
+            status: "DELIVERED",
             created_at: "2026-02-28T00:00:00Z",
             intent_type: "notify.message.v1",
             correlation_id: "11111111-1111-1111-1111-111111111111",
@@ -249,7 +249,7 @@ test("resolveIntent posts terminal payload", async () => {
       return new Response(
         JSON.stringify({
           ok: true,
-          intent: { intent_id: intentId, status: "done" },
+          intent: { intent_id: intentId, status: "COMPLETED" },
           event: { intent_id: intentId, seq: 3, event_type: "intent.completed", status: "COMPLETED" },
           completion_delivery: { delivered: false, reason: "reply_to_not_set" },
         }),
