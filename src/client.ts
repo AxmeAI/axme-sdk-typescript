@@ -87,6 +87,15 @@ export type UserWriteOptions = RequestOptions & {
   idempotencyKey?: string;
 };
 
+export type ServiceAccountWriteOptions = RequestOptions & {
+  idempotencyKey?: string;
+};
+
+export type ServiceAccountsListOptions = RequestOptions & {
+  orgId: string;
+  workspaceId?: string;
+};
+
 export type McpObserverEvent = {
   phase: "request" | "response";
   method: string;
@@ -643,6 +652,67 @@ export class AxmeClient {
     return this.requestJson("/v1/users/profile/update", {
       method: "POST",
       body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async createServiceAccount(
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/service-accounts", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async listServiceAccounts(options: ServiceAccountsListOptions): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/service-accounts`);
+    url.searchParams.set("org_id", options.orgId);
+    if (options.workspaceId) {
+      url.searchParams.set("workspace_id", options.workspaceId);
+    }
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async getServiceAccount(serviceAccountId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/service-accounts/${serviceAccountId}`, {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async createServiceAccountKey(
+    serviceAccountId: string,
+    payload: Record<string, unknown>,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/service-accounts/${serviceAccountId}/keys`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async revokeServiceAccountKey(
+    serviceAccountId: string,
+    keyId: string,
+    options: ServiceAccountWriteOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/service-accounts/${serviceAccountId}/keys/${keyId}/revoke`, {
+      method: "POST",
       idempotencyKey: options.idempotencyKey,
       traceId: options.traceId,
       retryable: Boolean(options.idempotencyKey),

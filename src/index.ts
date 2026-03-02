@@ -11,6 +11,8 @@ export {
   type InviteWriteOptions,
   type MediaWriteOptions,
   type SchemaWriteOptions,
+  type ServiceAccountsListOptions,
+  type ServiceAccountWriteOptions,
   type UserWriteOptions,
   type IdempotentOwnerScopedOptions,
   type InboxChangesOptions,
