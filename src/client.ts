@@ -38,6 +38,9 @@ export type ListIntentEventsOptions = RequestOptions & {
 
 export type ResolveIntentOptions = RequestOptions & {
   idempotencyKey?: string;
+  ownerAgent?: string;
+  xOwnerAgent?: string;
+  authorization?: string;
 };
 
 export type ObserveIntentOptions = RequestOptions & {
@@ -213,11 +216,57 @@ export class AxmeClient {
     payload: Record<string, unknown>,
     options: ResolveIntentOptions = {},
   ): Promise<Record<string, unknown>> {
-    return this.requestJson(`/v1/intents/${intentId}/resolve`, {
+    return this.requestJson(this.buildUrl(`/v1/intents/${intentId}/resolve`, options), {
       method: "POST",
       body: JSON.stringify(payload),
       idempotencyKey: options.idempotencyKey,
       traceId: options.traceId,
+      headers: this.buildIntentControlHeaders(options),
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async resumeIntent(
+    intentId: string,
+    payload: Record<string, unknown>,
+    options: ResolveIntentOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(this.buildUrl(`/v1/intents/${intentId}/resume`, options), {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      headers: this.buildIntentControlHeaders(options),
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async updateIntentControls(
+    intentId: string,
+    payload: Record<string, unknown>,
+    options: ResolveIntentOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(this.buildUrl(`/v1/intents/${intentId}/controls`, options), {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      headers: this.buildIntentControlHeaders(options),
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async updateIntentPolicy(
+    intentId: string,
+    payload: Record<string, unknown>,
+    options: ResolveIntentOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson(this.buildUrl(`/v1/intents/${intentId}/policy`, options), {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      headers: this.buildIntentControlHeaders(options),
       retryable: Boolean(options.idempotencyKey),
     });
   }
@@ -1302,6 +1351,7 @@ export class AxmeClient {
       body?: string;
       idempotencyKey?: string;
       traceId?: string;
+      headers?: Record<string, string>;
       retryable: boolean;
     },
   ): Promise<Record<string, unknown>> {
@@ -1311,7 +1361,7 @@ export class AxmeClient {
       try {
         response = await this.fetchImpl(this.toAbsoluteUrl(pathOrUrl), {
           method: options.method,
-          headers: this.buildHeaders(options.idempotencyKey, options.traceId),
+          headers: this.buildHeaders(options.idempotencyKey, options.traceId, options.headers),
           body: options.body,
         });
       } catch (error) {
@@ -1441,7 +1491,11 @@ export class AxmeClient {
     this.mcpObserver(event);
   }
 
-  private buildHeaders(idempotencyKey?: string, traceId?: string): Record<string, string> {
+  private buildHeaders(
+    idempotencyKey?: string,
+    traceId?: string,
+    additionalHeaders?: Record<string, string>,
+  ): Record<string, string> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
@@ -1453,7 +1507,23 @@ export class AxmeClient {
     if (normalizedTraceId) {
       headers["X-Trace-Id"] = normalizedTraceId;
     }
+    if (additionalHeaders) {
+      for (const [key, value] of Object.entries(additionalHeaders)) {
+        headers[key] = value;
+      }
+    }
     return headers;
+  }
+
+  private buildIntentControlHeaders(options: ResolveIntentOptions): Record<string, string> | undefined {
+    const headers: Record<string, string> = {};
+    if (options.xOwnerAgent) {
+      headers["x-owner-agent"] = options.xOwnerAgent;
+    }
+    if (options.authorization) {
+      headers.authorization = options.authorization;
+    }
+    return Object.keys(headers).length > 0 ? headers : undefined;
   }
 
   private resolveTraceId(traceId?: string): string | undefined {
