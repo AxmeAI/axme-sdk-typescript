@@ -261,6 +261,106 @@ test("resolveIntent posts terminal payload", async () => {
   assert.equal((response.event as Record<string, unknown>).event_type, "intent.completed");
 });
 
+test("resolveIntent supports owner scope and control headers", async () => {
+  const intentId = "22222222-2222-4222-8222-222222222222";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token", autoTraceId: false },
+    async (input, init) => {
+      assert.equal(input.toString(), `https://api.axme.test/v1/intents/${intentId}/resolve?owner_agent=agent%3A%2F%2Fowner`);
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["x-owner-agent"], "agent://owner");
+      assert.equal(headers.authorization, "Bearer scoped-token");
+      assert.equal(headers["X-Trace-Id"], "trace-1");
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      assert.equal(body.expected_policy_generation, 3);
+      return new Response(JSON.stringify({ ok: true, applied: false, reason: "stale_policy_generation", policy_generation: 4 }), {
+        status: 200,
+      });
+    },
+  );
+  const response = await client.resolveIntent(
+    intentId,
+    { status: "COMPLETED", expected_policy_generation: 3 },
+    { ownerAgent: "agent://owner", xOwnerAgent: "agent://owner", authorization: "Bearer scoped-token", traceId: "trace-1" },
+  );
+  assert.equal(response.ok, true);
+  assert.equal(response.applied, false);
+});
+
+test("resumeIntent posts resume payload", async () => {
+  const intentId = "22222222-2222-4222-8222-222222222222";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), `https://api.axme.test/v1/intents/${intentId}/resume?owner_agent=agent%3A%2F%2Fowner`);
+      assert.equal(init?.method, "POST");
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Idempotency-Key"], "resume-1");
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      assert.equal(body.approve_current_step, true);
+      return new Response(JSON.stringify({ ok: true, applied: true, intent: { intent_id: intentId } }), { status: 200 });
+    },
+  );
+  const response = await client.resumeIntent(
+    intentId,
+    { approve_current_step: true, expected_policy_generation: 2 },
+    { ownerAgent: "agent://owner", idempotencyKey: "resume-1" },
+  );
+  assert.equal(response.ok, true);
+  assert.equal(response.applied, true);
+});
+
+test("updateIntentControls posts controls patch payload", async () => {
+  const intentId = "22222222-2222-4222-8222-222222222222";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), `https://api.axme.test/v1/intents/${intentId}/controls`);
+      assert.equal(init?.method, "POST");
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const controlsPatch = body.controls_patch as Record<string, unknown>;
+      assert.equal(controlsPatch.timeout_seconds, 120);
+      return new Response(JSON.stringify({ ok: true, applied: true, policy_generation: 5 }), { status: 200 });
+    },
+  );
+  const response = await client.updateIntentControls(intentId, {
+    controls_patch: { timeout_seconds: 120 },
+    expected_policy_generation: 5,
+  });
+  assert.equal(response.ok, true);
+  assert.equal(response.policy_generation, 5);
+});
+
+test("updateIntentPolicy posts grants and envelope patch payload", async () => {
+  const intentId = "22222222-2222-4222-8222-222222222222";
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), `https://api.axme.test/v1/intents/${intentId}/policy?owner_agent=agent%3A%2F%2Fcreator`);
+      assert.equal(init?.method, "POST");
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const grantsPatch = body.grants_patch as Record<string, unknown>;
+      const delegate = grantsPatch["delegate:agent://ops"] as Record<string, unknown>;
+      assert.deepEqual(delegate.allow, ["resume", "update_controls"]);
+      const envelopePatch = body.envelope_patch as Record<string, unknown>;
+      assert.equal(envelopePatch.max_retry_count, 10);
+      return new Response(JSON.stringify({ ok: true, applied: true, policy_generation: 6 }), { status: 200 });
+    },
+  );
+  const response = await client.updateIntentPolicy(
+    intentId,
+    {
+      grants_patch: { "delegate:agent://ops": { allow: ["resume", "update_controls"] } },
+      envelope_patch: { max_retry_count: 10 },
+      expected_policy_generation: 5,
+    },
+    { ownerAgent: "agent://creator" },
+  );
+  assert.equal(response.ok, true);
+  assert.equal(response.policy_generation, 6);
+});
+
 test("observe prefers stream and yields terminal lifecycle", async () => {
   const intentId = "22222222-2222-4222-8222-222222222222";
   const client = new AxmeClient(
