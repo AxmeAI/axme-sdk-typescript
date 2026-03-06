@@ -7,6 +7,43 @@
 
 ---
 
+## What Is AXME?
+
+AXME is a coordination infrastructure for durable execution of long-running intents across distributed systems.
+
+It provides a model for executing **intents** — requests that may take minutes, hours, or longer to complete — across services, agents, and human participants.
+
+## AXP — the Intent Protocol
+
+At the core of AXME is **AXP (Intent Protocol)** — an open protocol that defines contracts and lifecycle rules for intent processing.
+
+AXP can be implemented independently.  
+The open part of the platform includes:
+
+- the protocol specification and schemas
+- SDKs and CLI for integration
+- conformance tests
+- implementation and integration documentation
+
+## AXME Cloud
+
+**AXME Cloud** is the managed service that runs AXP in production together with **The Registry** (identity and routing).
+
+It removes operational complexity by providing:
+
+- reliable intent delivery and retries  
+- lifecycle management for long-running operations  
+- handling of timeouts, waits, reminders, and escalation  
+- observability of intent status and execution history  
+
+State and events can be accessed through:
+
+- API and SDKs  
+- event streams and webhooks  
+- the cloud console
+
+---
+
 ## What You Can Do With This SDK
 
 - **Send intents** — create typed, durable actions with delivery guarantees
@@ -32,7 +69,8 @@ import { AxmeClient } from "@axme/axme";
 
 const client = new AxmeClient({
   baseUrl: "https://gateway.axme.ai",
-  apiKey: "YOUR_API_KEY",
+  apiKey: "YOUR_PLATFORM_API_KEY", // sent as x-api-key
+  actorToken: "OPTIONAL_USER_OR_SESSION_TOKEN", // sent as Authorization: Bearer
 });
 
 // Check connectivity
@@ -68,7 +106,7 @@ Every request from this SDK is wrapped in the AXP protocol envelope, handled tra
 
 ![AXP Protocol Envelope](docs/diagrams/01-protocol-envelope.svg)
 
-*The SDK sets `Idempotency-Key`, `X-Correlation-Id`, `X-Schema-Version`, and `Authorization` headers on every request. The gateway validates the envelope before processing the payload.*
+*The SDK sets `x-api-key` on every request, and sets `Authorization: Bearer <actor token>` when `actorToken` is configured. It also handles `Idempotency-Key` and `X-Trace-Id` headers for reliability and tracing.*
 
 ---
 
