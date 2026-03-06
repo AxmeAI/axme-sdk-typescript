@@ -20,17 +20,15 @@
 ## Install
 
 ```bash
-npm install github:AxmeAI/axme-sdk-typescript
+npm install @axme/axme
 ```
-
-npm publication target: `axme` (pending npm account authorization for publish).
 
 ---
 
 ## Quickstart
 
 ```typescript
-import { AxmeClient } from "axme";
+import { AxmeClient } from "@axme/axme";
 
 const client = new AxmeClient({
   baseUrl: "https://gateway.axme.ai",
