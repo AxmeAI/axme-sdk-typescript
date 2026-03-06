@@ -42,12 +42,43 @@ test("health returns parsed payload", async () => {
     async (input, init) => {
       assert.equal(input.toString(), "https://api.axme.test/health");
       assert.equal(init?.method, "GET");
-      assert.equal(init?.headers && (init.headers as Record<string, string>).Authorization, "Bearer token");
+      assert.equal(init?.headers && (init.headers as Record<string, string>)["x-api-key"], "token");
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     },
   );
 
   assert.deepEqual(await client.health(), { ok: true });
+});
+
+test("health includes actor token authorization when configured", async () => {
+  const client = new AxmeClient(
+    {
+      baseUrl: "https://api.axme.test",
+      apiKey: "platform-key",
+      actorToken: "actor-token",
+    },
+    async (_input, init) => {
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["x-api-key"], "platform-key");
+      assert.equal(headers.Authorization, "Bearer actor-token");
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    },
+  );
+
+  assert.deepEqual(await client.health(), { ok: true });
+});
+
+test("constructor rejects conflicting actor token aliases", () => {
+  assert.throws(
+    () =>
+      new AxmeClient({
+        baseUrl: "https://api.axme.test",
+        apiKey: "platform-key",
+        actorToken: "actor-a",
+        bearerToken: "actor-b",
+      }),
+    /actorToken and config\.bearerToken must match/,
+  );
 });
 
 test("health propagates provided trace id", async () => {
@@ -70,7 +101,7 @@ test("createIntent sends json and returns payload", async () => {
       assert.equal(input.toString(), "https://api.axme.test/v1/intents");
       assert.equal(init?.method, "POST");
       const headers = init?.headers as Record<string, string>;
-      assert.equal(headers.Authorization, "Bearer token");
+      assert.equal(headers["x-api-key"], "token");
       assert.equal(headers["Idempotency-Key"], "idem-1");
       assert.equal(
         init?.body,

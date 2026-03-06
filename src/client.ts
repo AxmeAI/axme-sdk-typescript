@@ -9,6 +9,8 @@ import {
 export type AxmeClientConfig = {
   baseUrl: string;
   apiKey: string;
+  actorToken?: string;
+  bearerToken?: string;
   maxRetries?: number;
   retryBackoffMs?: number;
   autoTraceId?: boolean;
@@ -122,6 +124,7 @@ export type IdempotentOwnerScopedOptions = OwnerScopedOptions & {
 export class AxmeClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
+  private readonly actorToken?: string;
   private readonly maxRetries: number;
   private readonly retryBackoffMs: number;
   private readonly autoTraceId: boolean;
@@ -133,8 +136,12 @@ export class AxmeClient {
   private readonly fetchImpl: typeof fetch;
 
   constructor(config: AxmeClientConfig, fetchImpl: typeof fetch = fetch) {
+    if (config.actorToken && config.bearerToken && config.actorToken !== config.bearerToken) {
+      throw new Error("config.actorToken and config.bearerToken must match when both are provided");
+    }
     this.baseUrl = config.baseUrl.replace(/\/+$/, "");
     this.apiKey = config.apiKey;
+    this.actorToken = config.actorToken ?? config.bearerToken;
     this.maxRetries = config.maxRetries ?? 2;
     this.retryBackoffMs = config.retryBackoffMs ?? 200;
     this.autoTraceId = config.autoTraceId ?? true;
@@ -1497,9 +1504,12 @@ export class AxmeClient {
     additionalHeaders?: Record<string, string>,
   ): Record<string, string> {
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.apiKey}`,
+      "x-api-key": this.apiKey,
       "Content-Type": "application/json",
     };
+    if (this.actorToken) {
+      headers.Authorization = `Bearer ${this.actorToken}`;
+    }
     if (idempotencyKey) {
       headers["Idempotency-Key"] = idempotencyKey;
     }
