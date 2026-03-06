@@ -20,15 +20,17 @@
 ## Install
 
 ```bash
-npm install @axme/sdk
+npm install github:AxmeAI/axme-sdk-typescript
 ```
+
+npm publication target: `axme` (pending npm account authorization for publish).
 
 ---
 
 ## Quickstart
 
 ```typescript
-import { AxmeClient } from "@axme/sdk";
+import { AxmeClient } from "axme";
 
 const client = new AxmeClient({
   baseUrl: "https://gateway.axme.ai",
@@ -103,13 +105,16 @@ for await (const event of client.observe(intent.intent_id)) {
 
 ```typescript
 // Fetch and approve pending items
-const inbox = await client.listInbox({ owner_agent: "agent://manager", status: "PENDING" });
+const inbox = await client.listInbox({ ownerAgent: "agent://manager" });
 
-for (const item of inbox.items) {
-  await client.resolveApproval(item.intent_id, {
-    decision: "approved",
-    note: "Reviewed and approved",
-  });
+for (const item of (Array.isArray(inbox.items) ? inbox.items : [])) {
+  const threadId = typeof item?.thread_id === "string" ? item.thread_id : undefined;
+  if (!threadId) continue;
+  await client.approveInboxThread(
+    threadId,
+    { note: "Reviewed and approved" },
+    { ownerAgent: "agent://manager" }
+  );
 }
 ```
 
