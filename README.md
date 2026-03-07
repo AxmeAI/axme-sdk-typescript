@@ -68,9 +68,10 @@ npm install @axme/axme
 import { AxmeClient } from "@axme/axme";
 
 const client = new AxmeClient({
-  baseUrl: "https://gateway.axme.ai",
-  apiKey: "YOUR_PLATFORM_API_KEY", // sent as x-api-key
+  apiKey: "AXME_API_KEY", // sent as x-api-key
   actorToken: "OPTIONAL_USER_OR_SESSION_TOKEN", // sent as Authorization: Bearer
+  // Optional override (defaults to https://api.cloud.axme.ai):
+  // baseUrl: "https://staging-api.cloud.axme.ai",
 });
 
 // Check connectivity
@@ -87,6 +88,26 @@ const intent = await client.createIntent(
 );
 console.log(intent.intent_id, intent.status);
 ```
+
+---
+
+## Minimal Language-Native Example
+
+Short basic submit/get example:
+
+- [`examples/basic-submit.ts`](examples/basic-submit.ts)
+
+Run:
+
+```bash
+export AXME_API_KEY="axme_sa_..."
+npx tsx examples/basic-submit.ts
+```
+
+Full runnable scenario set lives in:
+
+- Cloud: <https://github.com/AxmeAI/axme-examples/tree/main/cloud>
+- Protocol-only: <https://github.com/AxmeAI/axme-examples/tree/main/protocol>
 
 ---
 
@@ -181,6 +202,8 @@ axme-sdk-typescript/
 │   ├── config.ts              # AxmeClientConfig type
 │   └── errors.ts              # AxmeAPIError and subclasses
 ├── test/                      # Unit and integration tests
+├── examples/
+│   └── basic-submit.ts        # Minimal language-native quickstart
 ├── docs/
 │   └── diagrams/              # Diagram copies for README embedding
 └── tsconfig.json

@@ -81,6 +81,18 @@ test("constructor rejects conflicting actor token aliases", () => {
   );
 });
 
+test("constructor uses default baseUrl when omitted", async () => {
+  const client = new AxmeClient(
+    { apiKey: "token" },
+    async (input) => {
+      assert.equal(input.toString(), "https://api.cloud.axme.ai/health");
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    },
+  );
+
+  assert.deepEqual(await client.health(), { ok: true });
+});
+
 test("health propagates provided trace id", async () => {
   const client = new AxmeClient(
     { baseUrl: "https://api.axme.test", apiKey: "token", autoTraceId: false },
