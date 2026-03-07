@@ -7,7 +7,7 @@ import {
 } from "./errors.js";
 
 export type AxmeClientConfig = {
-  baseUrl: string;
+  baseUrl?: string;
   apiKey: string;
   actorToken?: string;
   bearerToken?: string;
@@ -19,6 +19,8 @@ export type AxmeClientConfig = {
   mcpProtocolVersion?: string;
   mcpObserver?: (event: McpObserverEvent) => void;
 };
+
+const DEFAULT_BASE_URL = "https://api.cloud.axme.ai";
 
 export type RequestOptions = {
   traceId?: string;
@@ -139,7 +141,10 @@ export class AxmeClient {
     if (config.actorToken && config.bearerToken && config.actorToken !== config.bearerToken) {
       throw new Error("config.actorToken and config.bearerToken must match when both are provided");
     }
-    this.baseUrl = config.baseUrl.replace(/\/+$/, "");
+    this.baseUrl = (config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+    if (!config.apiKey || config.apiKey.trim().length === 0) {
+      throw new Error("config.apiKey is required");
+    }
     this.apiKey = config.apiKey;
     this.actorToken = config.actorToken ?? config.bearerToken;
     this.maxRetries = config.maxRetries ?? 2;
