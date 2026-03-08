@@ -211,6 +211,36 @@ axme-sdk-typescript/
 
 ---
 
+## MCP (Model Context Protocol)
+
+The TypeScript SDK includes a built-in MCP endpoint client for gateway-hosted MCP sessions:
+
+```typescript
+// Initialize an MCP session
+const init = await client.mcpInitialize();
+console.log(init.serverInfo);
+
+// List available tools
+const tools = await client.mcpListTools();
+for (const tool of (Array.isArray(tools.tools) ? tools.tools : [])) {
+  console.log((tool as Record<string, unknown>).name);
+}
+
+// Call a tool
+const result = await client.mcpCallTool("create_intent", {
+  arguments: {
+    intent_type: "order.fulfillment.v1",
+    payload: { order_id: "ord_123" },
+    owner_agent: "agent://fulfillment-service",
+  },
+});
+console.log(result);
+```
+
+MCP calls go to `/mcp` by default. Override with `mcpEndpointPath` in the client config.
+
+---
+
 ## Tests
 
 ```bash
