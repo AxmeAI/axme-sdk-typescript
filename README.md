@@ -115,7 +115,7 @@ Full runnable scenario set lives in:
 
 The SDK covers the full public API surface organized into families:
 
-![API Method Family Map](docs/diagrams/01-api-method-family-map.svg)
+![API Method Family Map](https://raw.githubusercontent.com/AxmeAI/axme-docs/main/docs/diagrams/api/01-api-method-family-map.svg)
 
 *D1 families (intents, inbox, approvals) are the core integration path. D2 adds schemas, webhooks, and media. D3 covers enterprise admin. The SDK implements all three tiers.*
 
@@ -125,7 +125,7 @@ The SDK covers the full public API surface organized into families:
 
 Every request from this SDK is wrapped in the AXP protocol envelope, handled transparently:
 
-![AXP Protocol Envelope](docs/diagrams/01-protocol-envelope.svg)
+![AXP Protocol Envelope](https://raw.githubusercontent.com/AxmeAI/axme-docs/main/docs/diagrams/protocol/01-protocol-envelope.svg)
 
 *The SDK sets `x-api-key` on every request, and sets `Authorization: Bearer <actor token>` when `actorToken` is configured. It also handles `Idempotency-Key` and `X-Trace-Id` headers for reliability and tracing.*
 
@@ -135,7 +135,7 @@ Every request from this SDK is wrapped in the AXP protocol envelope, handled tra
 
 Every mutating method accepts an optional `idempotencyKey`. Pass it for any operation you might retry:
 
-![Idempotency and Replay Protection](docs/diagrams/03-idempotency-and-replay-protection.svg)
+![Idempotency and Replay Protection](https://raw.githubusercontent.com/AxmeAI/axme-docs/main/docs/diagrams/protocol/03-idempotency-and-replay-protection.svg)
 
 ```typescript
 // Safe to call multiple times — only executes once
@@ -205,7 +205,6 @@ axme-sdk-typescript/
 ├── examples/
 │   └── basic-submit.ts        # Minimal language-native quickstart
 ├── docs/
-│   └── diagrams/              # Diagram copies for README embedding
 └── tsconfig.json
 ```
 
