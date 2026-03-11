@@ -103,6 +103,12 @@ export type ServiceAccountsListOptions = RequestOptions & {
   workspaceId?: string;
 };
 
+export type AgentsListOptions = RequestOptions & {
+  orgId: string;
+  workspaceId: string;
+  limit?: number;
+};
+
 export type McpObserverEvent = {
   phase: "request" | "response";
   method: string;
@@ -777,6 +783,35 @@ export class AxmeClient {
       idempotencyKey: options.idempotencyKey,
       traceId: options.traceId,
       retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async listAgents(options: AgentsListOptions): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/agents`);
+    url.searchParams.set("org_id", options.orgId);
+    url.searchParams.set("workspace_id", options.workspaceId);
+    if (typeof options.limit === "number") {
+      url.searchParams.set("limit", String(options.limit));
+    }
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async getAgent(address: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    if (!address || !address.trim()) {
+      throw new Error("address must be a non-empty string");
+    }
+    let pathPart = address.trim();
+    if (pathPart.startsWith("agent://")) {
+      pathPart = pathPart.slice("agent://".length);
+    }
+    return this.requestJson(`/v1/agents/${pathPart}`, {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
     });
   }
 
