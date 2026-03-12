@@ -103,6 +103,10 @@ export type ServiceAccountsListOptions = RequestOptions & {
   workspaceId?: string;
 };
 
+export type ApplyScenarioOptions = RequestOptions & {
+  idempotencyKey?: string;
+};
+
 export type AgentsListOptions = RequestOptions & {
   orgId: string;
   workspaceId: string;
@@ -229,7 +233,48 @@ export class AxmeClient {
     });
   }
 
-  async resolveIntent(
+  /**
+   * Submit a ScenarioBundle (api.scenarios.bundle.request.v1.json) to POST /v1/scenarios/bundle.
+   *
+   * The server provisions missing agents, compiles the workflow, and creates the intent in one
+   * atomic operation.  Returns the full bundle response including `intent_id`, `status`,
+   * `pending_with`, and resolved `agents`.
+   */
+  async applyScenario(
+    bundle: Record<string, unknown>,
+    options: ApplyScenarioOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const payload: Record<string, unknown> = { ...bundle };
+    if (options.idempotencyKey != null) {
+      payload["idempotency_key"] ??= options.idempotencyKey;
+    }
+    return this.requestJson("/v1/scenarios/bundle", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  /**
+   * Dry-run validate a ScenarioBundle without creating any resources.
+   *
+   * Returns `{ valid: boolean, errors: string[] }`.
+   */
+  async validateScenario(
+    bundle: Record<string, unknown>,
+    options: RequestOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/scenarios/validate", {
+      method: "POST",
+      body: JSON.stringify(bundle),
+      traceId: options.traceId,
+      retryable: true,
+    });
+  }
+
+
     intentId: string,
     payload: Record<string, unknown>,
     options: ResolveIntentOptions = {},
