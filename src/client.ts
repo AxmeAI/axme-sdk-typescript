@@ -234,11 +234,11 @@ export class AxmeClient {
   }
 
   /**
-   * Submit a ScenarioBundle (api.scenarios.bundle.request.v1.json) to POST /v1/scenarios/bundle.
+   * Submit a ScenarioBundle to POST /v1/scenarios/apply.
    *
    * The server provisions missing agents, compiles the workflow, and creates the intent in one
-   * atomic operation.  Returns the full bundle response including `intent_id`, `status`,
-   * `pending_with`, and resolved `agents`.
+   * atomic operation.  Returns the full bundle response including `intent_id`, `compile_id`,
+   * and `agents_provisioned`.
    */
   async applyScenario(
     bundle: Record<string, unknown>,
@@ -248,7 +248,7 @@ export class AxmeClient {
     if (options.idempotencyKey != null) {
       payload["idempotency_key"] ??= options.idempotencyKey;
     }
-    return this.requestJson("/v1/scenarios/bundle", {
+    return this.requestJson("/v1/scenarios/apply", {
       method: "POST",
       body: JSON.stringify(payload),
       idempotencyKey: options.idempotencyKey,
@@ -260,7 +260,7 @@ export class AxmeClient {
   /**
    * Dry-run validate a ScenarioBundle without creating any resources.
    *
-   * Returns `{ valid: boolean, errors: string[] }`.
+   * Returns `{ valid: boolean, errors: string[], warnings: string[] }`.
    */
   async validateScenario(
     bundle: Record<string, unknown>,
