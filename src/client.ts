@@ -275,6 +275,7 @@ export class AxmeClient {
   }
 
 
+  async resolveIntent(
     intentId: string,
     payload: Record<string, unknown>,
     options: ResolveIntentOptions = {},
