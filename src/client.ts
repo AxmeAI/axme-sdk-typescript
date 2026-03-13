@@ -113,6 +113,12 @@ export type AgentsListOptions = RequestOptions & {
   limit?: number;
 };
 
+export type ListenOptions = RequestOptions & {
+  since?: number;
+  waitSeconds?: number;
+  timeoutMs?: number;
+};
+
 export type McpObserverEvent = {
   phase: "request" | "response";
   method: string;
@@ -861,6 +867,78 @@ export class AxmeClient {
     });
   }
 
+  /**
+   * Stream incoming intents for an agent address via SSE.
+   *
+   * Connects to `GET /v1/agents/{address}/intents/stream` and yields each intent payload
+   * as it arrives.  The server sends a `stream.timeout` keepalive when there are no new
+   * intents within `waitSeconds`, at which point the client automatically reconnects until
+   * `timeoutMs` elapses (or indefinitely when `timeoutMs` is not set).
+   *
+   * The `since` cursor is advanced automatically — reconnects replay from the last seen
+   * sequence number so no events are skipped.
+   *
+   * @example
+   * ```ts
+   * for await (const intent of client.listen("agent://acme/main/validator")) {
+   *   const result = await process(intent.payload);
+   *   await client.resumeIntent(intent.intent_id as string, { outcome: "success", result });
+   * }
+   * ```
+   */
+  async *listen(
+    address: string,
+    options: ListenOptions = {},
+  ): AsyncGenerator<Record<string, unknown>, void, void> {
+    if (!address || !address.trim()) {
+      throw new Error("address must be a non-empty string");
+    }
+    const since = options.since ?? 0;
+    const waitSeconds = options.waitSeconds ?? 15;
+    if (since < 0) {
+      throw new Error("since must be >= 0");
+    }
+    if (waitSeconds < 1) {
+      throw new Error("waitSeconds must be >= 1");
+    }
+    if (typeof options.timeoutMs === "number" && options.timeoutMs <= 0) {
+      throw new Error("timeoutMs must be > 0 when provided");
+    }
+
+    let pathPart = address.trim();
+    if (pathPart.startsWith("agent://")) {
+      pathPart = pathPart.slice("agent://".length);
+    }
+
+    const deadline = typeof options.timeoutMs === "number" ? Date.now() + options.timeoutMs : undefined;
+    let nextSince = since;
+
+    while (true) {
+      if (typeof deadline === "number" && Date.now() >= deadline) {
+        throw new Error(`timed out while listening on ${address}`);
+      }
+
+      let streamWaitSeconds = waitSeconds;
+      if (typeof deadline === "number") {
+        const msLeft = Math.max(0, deadline - Date.now());
+        if (msLeft <= 0) {
+          throw new Error(`timed out while listening on ${address}`);
+        }
+        streamWaitSeconds = Math.max(1, Math.min(waitSeconds, Math.floor(msLeft / 1000)));
+      }
+
+      const events = await this.fetchAgentIntentStream(pathPart, {
+        since: nextSince,
+        waitSeconds: streamWaitSeconds,
+        traceId: options.traceId,
+      });
+      for (const event of events) {
+        nextSince = maxSeenSeq(nextSince, event);
+        yield event;
+      }
+    }
+  }
+
   async createOrganization(
     payload: Record<string, unknown>,
     options: ServiceAccountWriteOptions = {},
@@ -1437,6 +1515,29 @@ export class AxmeClient {
     return parseIntentSseEvents(body);
   }
 
+  private async fetchAgentIntentStream(
+    pathPart: string,
+    options: {
+      since: number;
+      waitSeconds: number;
+      traceId?: string;
+    },
+  ): Promise<Array<Record<string, unknown>>> {
+    const streamUrl = new URL(`${this.baseUrl}/v1/agents/${pathPart}/intents/stream`);
+    streamUrl.searchParams.set("since", String(options.since));
+    streamUrl.searchParams.set("wait_seconds", String(options.waitSeconds));
+
+    const response = await this.fetchImpl(streamUrl.toString(), {
+      method: "GET",
+      headers: this.buildHeaders(undefined, options.traceId),
+    });
+    if (!response.ok) {
+      throw await buildHttpError(response);
+    }
+    const body = await response.text();
+    return parseAgentSseEvents(body);
+  }
+
   private async requestJson(
     pathOrUrl: string,
     options: {
@@ -1764,6 +1865,17 @@ function matchesJsonType(value: unknown, acceptedTypes: string[]): boolean {
 }
 
 function parseIntentSseEvents(body: string): Array<Record<string, unknown>> {
+  return parseSseEvents(body, (eventType) => eventType.startsWith("intent."));
+}
+
+function parseAgentSseEvents(body: string): Array<Record<string, unknown>> {
+  return parseSseEvents(body, (eventType) => eventType.startsWith("intent."));
+}
+
+function parseSseEvents(
+  body: string,
+  includeEvent: (eventType: string) => boolean,
+): Array<Record<string, unknown>> {
   const events: Array<Record<string, unknown>> = [];
   const lines = body.split(/\r?\n/);
   let currentEvent: string | undefined;
@@ -1771,7 +1883,7 @@ function parseIntentSseEvents(body: string): Array<Record<string, unknown>> {
 
   for (const line of lines) {
     if (line.length === 0) {
-      if (currentEvent && currentEvent.startsWith("intent.") && dataLines.length > 0) {
+      if (currentEvent && includeEvent(currentEvent) && dataLines.length > 0) {
         try {
           const parsed = JSON.parse(dataLines.join("\n"));
           if (parsed && typeof parsed === "object") {
@@ -1810,9 +1922,12 @@ function maxSeenSeq(nextSince: number, event: Record<string, unknown>): number {
 
 function isTerminalIntentEvent(event: Record<string, unknown>): boolean {
   const status = event.status;
-  if (typeof status === "string" && ["COMPLETED", "FAILED", "CANCELED"].includes(status)) {
+  if (typeof status === "string" && ["COMPLETED", "FAILED", "CANCELED", "TIMED_OUT"].includes(status)) {
     return true;
   }
   const eventType = event.event_type;
-  return typeof eventType === "string" && ["intent.completed", "intent.failed", "intent.canceled"].includes(eventType);
+  return (
+    typeof eventType === "string" &&
+    ["intent.completed", "intent.failed", "intent.canceled", "intent.timed_out"].includes(eventType)
+  );
 }

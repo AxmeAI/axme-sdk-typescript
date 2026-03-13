@@ -1942,3 +1942,204 @@ test("validateScenario returns validation errors from server", async () => {
   assert.ok(Array.isArray(result.errors));
   assert.equal((result.errors as string[]).length, 1);
 });
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function makeSse(events: Array<[string, Record<string, unknown>]>): string {
+  return events
+    .map(([eventType, payload]) => `event: ${eventType}\ndata: ${JSON.stringify(payload)}\n\n`)
+    .join("");
+}
+
+// ── listen() tests ────────────────────────────────────────────────────────────
+
+test("listen rejects blank address", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async () => new Response("{}", { status: 200 }),
+  );
+  await assert.rejects(() => collect(client.listen("")), /address must be a non-empty string/);
+  await assert.rejects(() => collect(client.listen("   ")), /address must be a non-empty string/);
+});
+
+test("listen rejects invalid since/waitSeconds", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async () => new Response("{}", { status: 200 }),
+  );
+  await assert.rejects(() => collect(client.listen("acme/main/router", { since: -1 })), /since must be >= 0/);
+  await assert.rejects(() => collect(client.listen("acme/main/router", { waitSeconds: 0 })), /waitSeconds must be >= 1/);
+  await assert.rejects(() => collect(client.listen("acme/main/router", { timeoutMs: 0 })), /timeoutMs must be > 0/);
+});
+
+test("listen strips agent:// prefix and hits correct URL", async () => {
+  let capturedUrl = "";
+  const intent = { intent_id: "aaa-1", seq: 1, event_type: "intent.submitted", status: "SUBMITTED" };
+  let calls = 0;
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input) => {
+      capturedUrl = input.toString();
+      calls += 1;
+      if (calls === 1) {
+        return new Response(makeSse([["intent.submitted", intent]]), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      // Second call returns empty to allow timeout
+      return new Response("", { status: 200, headers: { "content-type": "text/event-stream" } });
+    },
+  );
+
+  const results: Array<Record<string, unknown>> = [];
+  for await (const ev of client.listen("agent://acme/main/router", { waitSeconds: 1, timeoutMs: 50 })) {
+    results.push(ev);
+    if (results.length === 1) break;
+  }
+  assert.ok(capturedUrl.includes("/v1/agents/acme/main/router/intents/stream"), `URL was: ${capturedUrl}`);
+  assert.equal(results.length, 1);
+  assert.equal(results[0].intent_id, "aaa-1");
+});
+
+test("listen yields multiple intents from one SSE response", async () => {
+  const i1 = { intent_id: "aaa-1", seq: 1, event_type: "intent.submitted", status: "SUBMITTED" };
+  const i2 = { intent_id: "bbb-2", seq: 2, event_type: "intent.submitted", status: "SUBMITTED" };
+  let calls = 0;
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(makeSse([["intent.submitted", i1], ["intent.submitted", i2]]), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      return new Response("", { status: 200, headers: { "content-type": "text/event-stream" } });
+    },
+  );
+
+  const results: Array<Record<string, unknown>> = [];
+  for await (const ev of client.listen("acme/main/router", { waitSeconds: 1, timeoutMs: 50 })) {
+    results.push(ev);
+    if (results.length === 2) break;
+  }
+  assert.equal(results.length, 2);
+  assert.equal(results[0].intent_id, "aaa-1");
+  assert.equal(results[1].intent_id, "bbb-2");
+});
+
+test("listen advances since cursor on reconnect", async () => {
+  const intent = { intent_id: "aaa-1", seq: 5, event_type: "intent.submitted", status: "SUBMITTED" };
+  const sinceValues: string[] = [];
+  let calls = 0;
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input) => {
+      const url = new URL(input.toString());
+      sinceValues.push(url.searchParams.get("since") ?? "");
+      calls += 1;
+      if (calls === 1) {
+        return new Response(makeSse([["intent.submitted", intent]]), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      return new Response("", { status: 200, headers: { "content-type": "text/event-stream" } });
+    },
+  );
+
+  for await (const _ of client.listen("acme/main/worker", { waitSeconds: 1, timeoutMs: 50 })) {
+    break;
+  }
+  // First call since=0, after seq=5 event, next reconnect since=5
+  assert.equal(sinceValues[0], "0");
+  if (sinceValues.length > 1) {
+    assert.equal(sinceValues[1], "5");
+  }
+});
+
+test("listen propagates HTTP errors from stream endpoint", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async () => new Response(JSON.stringify({ detail: "forbidden" }), { status: 403 }),
+  );
+  await assert.rejects(
+    () => collect(client.listen("acme/main/blocked")),
+    (err: unknown) => err instanceof AxmeAuthError || err instanceof AxmeHttpError,
+  );
+});
+
+test("listen times out when timeoutMs elapses", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return new Response("", { status: 200, headers: { "content-type": "text/event-stream" } });
+    },
+  );
+  await assert.rejects(
+    () => collect(client.listen("acme/main/slow", { waitSeconds: 1, timeoutMs: 1 })),
+    /timed out while listening on/,
+  );
+});
+
+test("listen sends x-api-key header", async () => {
+  let capturedKey = "";
+  let calls = 0;
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "my-secret-key" },
+    async (_input, init) => {
+      capturedKey = (init?.headers as Record<string, string>)["x-api-key"] ?? "";
+      calls += 1;
+      if (calls === 1) {
+        const intent = { intent_id: "x-1", seq: 1, event_type: "intent.submitted", status: "SUBMITTED" };
+        return new Response(makeSse([["intent.submitted", intent]]), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      return new Response("", { status: 200, headers: { "content-type": "text/event-stream" } });
+    },
+  );
+  for await (const _ of client.listen("acme/main/secure", { waitSeconds: 1, timeoutMs: 50 })) {
+    break;
+  }
+  assert.equal(capturedKey, "my-secret-key");
+});
+
+test("listen ignores stream.timeout keepalive events", async () => {
+  const intent = { intent_id: "real-1", seq: 1, event_type: "intent.submitted", status: "SUBMITTED" };
+  const keepaliveSse =
+    "event: stream.timeout\ndata: {}\n\n" +
+    makeSse([["intent.submitted", intent]]);
+  let calls = 0;
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(keepaliveSse, { status: 200, headers: { "content-type": "text/event-stream" } });
+      }
+      return new Response("", { status: 200, headers: { "content-type": "text/event-stream" } });
+    },
+  );
+  const results: Array<Record<string, unknown>> = [];
+  for await (const ev of client.listen("acme/main/keep", { waitSeconds: 1, timeoutMs: 50 })) {
+    results.push(ev);
+    if (results.length === 1) break;
+  }
+  assert.equal(results.length, 1);
+  assert.equal(results[0].intent_id, "real-1");
+});
+
+// ── helpers (local) ───────────────────────────────────────────────────────────
+
+async function collect<T>(gen: AsyncGenerator<T>): Promise<T[]> {
+  const results: T[] = [];
+  for await (const item of gen) {
+    results.push(item);
+  }
+  return results;
+}
