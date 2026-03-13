@@ -1831,3 +1831,114 @@ test("mcpCallTool retries on transient HTTP failures when retryable", async () =
   assert.equal(result.ok, true);
   assert.equal(attempts, 2);
 });
+
+// ---------------------------------------------------------------------------
+// applyScenario / validateScenario
+// ---------------------------------------------------------------------------
+
+test("applyScenario posts bundle to /v1/scenarios/apply", async () => {
+  const bundle = {
+    scenario_id: "approval.nginx.v1",
+    agents: [{ role: "validator", address: "agent://acme/prod/validator" }],
+    intent: { type: "approval.change.v1", payload: { service: "nginx" } },
+  };
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/scenarios/apply");
+      assert.equal(init?.method, "POST");
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      assert.equal(body.scenario_id, "approval.nginx.v1");
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          intent_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+          compile_id: "cmp-123",
+          agents_provisioned: [],
+        }),
+        { status: 200 },
+      );
+    },
+  );
+  const result = await client.applyScenario(bundle);
+  assert.equal(result.ok, true);
+  assert.equal(result.intent_id, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+  assert.equal(result.compile_id, "cmp-123");
+});
+
+test("applyScenario injects idempotency_key from options", async () => {
+  const bundle = { scenario_id: "test.v1", intent: { type: "test.v1", payload: {} } };
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      assert.equal(body.idempotency_key, "idem-42");
+      return new Response(JSON.stringify({ ok: true, intent_id: "id-1", compile_id: "c-1", agents_provisioned: [] }), { status: 200 });
+    },
+  );
+  const result = await client.applyScenario(bundle, { idempotencyKey: "idem-42" });
+  assert.equal(result.ok, true);
+});
+
+test("applyScenario preserves bundle-level idempotency_key if already set", async () => {
+  const bundle = {
+    scenario_id: "test.v1",
+    idempotency_key: "bundle-key",
+    intent: { type: "test.v1", payload: {} },
+  };
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      assert.equal(body.idempotency_key, "bundle-key");
+      return new Response(JSON.stringify({ ok: true, intent_id: "id-2", compile_id: "c-2", agents_provisioned: [] }), { status: 200 });
+    },
+  );
+  await client.applyScenario(bundle, { idempotencyKey: "option-key" });
+});
+
+test("applyScenario propagates server error", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async () => new Response(
+      JSON.stringify({ ok: false, error: { code: "validation_error", message: "missing scenario_id" } }),
+      { status: 422 },
+    ),
+  );
+  await assert.rejects(
+    () => client.applyScenario({ intent: { type: "t.v1", payload: {} } }),
+    (err: unknown) => err instanceof AxmeValidationError || err instanceof AxmeHttpError,
+  );
+});
+
+test("validateScenario posts bundle to /v1/scenarios/validate", async () => {
+  const bundle = { scenario_id: "test.v1", intent: { type: "test.v1", payload: {} } };
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/scenarios/validate");
+      assert.equal(init?.method, "POST");
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      assert.equal(body.scenario_id, "test.v1");
+      return new Response(JSON.stringify({ ok: true, valid: true, errors: [], warnings: [] }), { status: 200 });
+    },
+  );
+  const result = await client.validateScenario(bundle);
+  assert.equal(result.valid, true);
+  assert.deepEqual(result.errors, []);
+});
+
+test("validateScenario returns validation errors from server", async () => {
+  const bundle = { scenario_id: "bad.v1", intent: { type: "bad.v1", payload: {} } };
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async () => new Response(
+      JSON.stringify({ ok: true, valid: false, errors: ["unknown tool_id: bad.tool"], warnings: [] }),
+      { status: 200 },
+    ),
+  );
+  const result = await client.validateScenario(bundle);
+  assert.equal(result.valid, false);
+  assert.ok(Array.isArray(result.errors));
+  assert.equal((result.errors as string[]).length, 1);
+});

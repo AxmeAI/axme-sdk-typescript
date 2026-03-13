@@ -8,8 +8,7 @@ const client = new AxmeClient({
 
 const created = await client.createIntent({
   intent_type: "intent.demo.v1",
-  from_agent: "agent://basic/typescript/source",
-  to_agent: "agent://basic/typescript/target",
+  to_agent: "agent://acme-corp/production/target",
   payload: { task: "hello-from-typescript" },
 }, { correlationId: randomUUID() });
 

@@ -77,16 +77,22 @@ const client = new AxmeClient({
 // Check connectivity
 console.log(await client.health());
 
-// Send an intent
+// Send an intent to a registered agent address
 const intent = await client.createIntent(
   {
     intent_type: "order.fulfillment.v1",
+    to_agent: "agent://acme-corp/production/fulfillment-service",
     payload: { order_id: "ord_123", priority: "high" },
-    owner_agent: "agent://fulfillment-service",
   },
-  { idempotencyKey: "fulfill-ord-123-001" }
+  { correlationId: "corr-ord-123-001", idempotencyKey: "fulfill-ord-123-001" }
 );
 console.log(intent.intent_id, intent.status);
+
+// List registered agent addresses in your workspace
+const agents = await client.listAgents({ orgId: "acme-corp-uuid", workspaceId: "prod-ws-uuid" });
+for (const agent of agents.agents as Array<Record<string, unknown>>) {
+  console.log(agent.address, agent.status);
+}
 ```
 
 ---

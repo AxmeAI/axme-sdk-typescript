@@ -103,6 +103,16 @@ export type ServiceAccountsListOptions = RequestOptions & {
   workspaceId?: string;
 };
 
+export type ApplyScenarioOptions = RequestOptions & {
+  idempotencyKey?: string;
+};
+
+export type AgentsListOptions = RequestOptions & {
+  orgId: string;
+  workspaceId: string;
+  limit?: number;
+};
+
 export type McpObserverEvent = {
   phase: "request" | "response";
   method: string;
@@ -222,6 +232,48 @@ export class AxmeClient {
       traceId: options.traceId,
     });
   }
+
+  /**
+   * Submit a ScenarioBundle to POST /v1/scenarios/apply.
+   *
+   * The server provisions missing agents, compiles the workflow, and creates the intent in one
+   * atomic operation.  Returns the full bundle response including `intent_id`, `compile_id`,
+   * and `agents_provisioned`.
+   */
+  async applyScenario(
+    bundle: Record<string, unknown>,
+    options: ApplyScenarioOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const payload: Record<string, unknown> = { ...bundle };
+    if (options.idempotencyKey != null) {
+      payload["idempotency_key"] ??= options.idempotencyKey;
+    }
+    return this.requestJson("/v1/scenarios/apply", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      idempotencyKey: options.idempotencyKey,
+      traceId: options.traceId,
+      retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  /**
+   * Dry-run validate a ScenarioBundle without creating any resources.
+   *
+   * Returns `{ valid: boolean, errors: string[], warnings: string[] }`.
+   */
+  async validateScenario(
+    bundle: Record<string, unknown>,
+    options: RequestOptions = {},
+  ): Promise<Record<string, unknown>> {
+    return this.requestJson("/v1/scenarios/validate", {
+      method: "POST",
+      body: JSON.stringify(bundle),
+      traceId: options.traceId,
+      retryable: true,
+    });
+  }
+
 
   async resolveIntent(
     intentId: string,
@@ -777,6 +829,35 @@ export class AxmeClient {
       idempotencyKey: options.idempotencyKey,
       traceId: options.traceId,
       retryable: Boolean(options.idempotencyKey),
+    });
+  }
+
+  async listAgents(options: AgentsListOptions): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/agents`);
+    url.searchParams.set("org_id", options.orgId);
+    url.searchParams.set("workspace_id", options.workspaceId);
+    if (typeof options.limit === "number") {
+      url.searchParams.set("limit", String(options.limit));
+    }
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async getAgent(address: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    if (!address || !address.trim()) {
+      throw new Error("address must be a non-empty string");
+    }
+    let pathPart = address.trim();
+    if (pathPart.startsWith("agent://")) {
+      pathPart = pathPart.slice("agent://".length);
+    }
+    return this.requestJson(`/v1/agents/${pathPart}`, {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
     });
   }
 
