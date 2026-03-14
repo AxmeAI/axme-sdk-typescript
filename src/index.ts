@@ -7,6 +7,7 @@ export {
   type ResolveIntentOptions,
   type ObserveIntentOptions,
   type WaitForIntentOptions,
+  type ListenOptions,
   type DecideApprovalOptions,
   type InviteWriteOptions,
   type MediaWriteOptions,
