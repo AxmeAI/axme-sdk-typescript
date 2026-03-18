@@ -3,7 +3,7 @@
 **Official TypeScript SDK for the AXME platform.** Send and manage intents, observe lifecycle events, handle approvals, and access the enterprise admin surface — fully typed, Promise-based, works in Node.js and edge runtimes.
 
 > **Alpha** · API surface is stabilizing. Not recommended for production workloads yet.  
-> Alpha access: https://cloud.axme.ai/alpha · Contact and suggestions: [hello@axme.ai](mailto:hello@axme.ai)
+> **Alpha** — install CLI, log in, run your first example in under 5 minutes. [Quick Start](https://cloud.axme.ai/alpha/cli) · [hello@axme.ai](mailto:hello@axme.ai)
 
 ---
 
@@ -270,6 +270,6 @@ npm test
 ## Contributing & Contact
 
 - Bug reports and feature requests: open an issue in this repository
-- Alpha access: https://cloud.axme.ai/alpha · Contact and suggestions: [hello@axme.ai](mailto:hello@axme.ai)
+- Quick Start: https://cloud.axme.ai/alpha/cli · Contact: [hello@axme.ai](mailto:hello@axme.ai)
 - Security disclosures: see [SECURITY.md](SECURITY.md)
 - Contribution guidelines: [CONTRIBUTING.md](CONTRIBUTING.md)
