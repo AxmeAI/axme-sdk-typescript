@@ -248,6 +248,34 @@ await client.updateIntentControls(intentId, {
 
 ---
 
+## Cross-Org Delivery Control
+
+Organizations can control which external orgs may send intents to their agents:
+
+1. **Org receive policy** — org-wide default (`open`, `allowlist`, `closed`)
+2. **Agent receive override** — per-agent exceptions to the org policy
+
+```typescript
+// Get org receive policy
+const policy = await client.get(`/v1/organizations/${orgId}/receive-policy`);
+
+// Set to allowlist mode
+await client.put(`/v1/organizations/${orgId}/receive-policy`, {
+  mode: "allowlist",
+  allowlist: ["org_id_of_trusted_partner"],
+});
+
+// Per-agent override
+await client.put(`/v1/agents/${address}/receive-override`, {
+  override_type: "allow",
+  source_org_id: "org_id_of_partner",
+});
+```
+
+See [`cross-org-receive-policy.md`](https://github.com/AxmeAI/axme-docs/blob/main/docs/cross-org-receive-policy.md) for the full decision flow.
+
+---
+
 ## Repository Structure
 
 ```
