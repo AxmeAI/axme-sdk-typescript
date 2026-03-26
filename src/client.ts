@@ -98,6 +98,44 @@ export type ServiceAccountWriteOptions = RequestOptions & {
   idempotencyKey?: string;
 };
 
+export type CreateSessionOptions = RequestOptions & {
+  type?: string;
+  projectId?: string;
+  parentSessionId?: string;
+  dependsOn?: string[];
+  metadata?: Record<string, unknown>;
+};
+
+export type ListSessionsOptions = RequestOptions & {
+  status?: string;
+  parentSessionId?: string;
+  limit?: number;
+};
+
+export type PostSessionMessageOptions = RequestOptions & {
+  contentType?: string;
+};
+
+export type ListSessionMessagesOptions = RequestOptions & {
+  since?: number;
+  limit?: number;
+};
+
+export type GetSessionFeedOptions = RequestOptions & {
+  limit?: number;
+};
+
+export type ListenSessionOptions = RequestOptions & {
+  since?: number;
+  waitSeconds?: number;
+  pollIntervalMs?: number;
+  timeoutMs?: number;
+};
+
+export type CompleteSessionOptions = RequestOptions & {
+  result?: Record<string, unknown>;
+};
+
 export type ServiceAccountsListOptions = RequestOptions & {
   orgId: string;
   workspaceId?: string;
@@ -1492,6 +1530,186 @@ export class AxmeClient {
     });
   }
 
+  // --- Session API ---
+
+  async createSession(options: CreateSessionOptions = {}): Promise<Record<string, unknown>> {
+    const payload: Record<string, unknown> = {};
+    if (options.type) payload.type = options.type;
+    if (options.projectId) payload.project_id = options.projectId;
+    if (options.parentSessionId) payload.parent_session_id = options.parentSessionId;
+    if (options.dependsOn) payload.depends_on = options.dependsOn;
+    if (options.metadata) payload.metadata = options.metadata;
+    return this.requestJson("/v1/sessions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      traceId: options.traceId,
+      retryable: false,
+    });
+  }
+
+  async getSession(sessionId: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+    return this.requestJson(`/v1/sessions/${sessionId}`, {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async listSessions(options: ListSessionsOptions = {}): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/sessions`);
+    if (options.status) url.searchParams.set("status", options.status);
+    if (options.parentSessionId) url.searchParams.set("parent_session_id", options.parentSessionId);
+    if (typeof options.limit === "number") url.searchParams.set("limit", String(options.limit));
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async postSessionMessage(
+    sessionId: string,
+    role: string,
+    content: unknown,
+    options: PostSessionMessageOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const payload: Record<string, unknown> = { role, content };
+    if (options.contentType) payload.content_type = options.contentType;
+    return this.requestJson(`/v1/sessions/${sessionId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      traceId: options.traceId,
+      retryable: false,
+    });
+  }
+
+  async listSessionMessages(
+    sessionId: string,
+    options: ListSessionMessagesOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/sessions/${sessionId}/messages`);
+    if (typeof options.since === "number") url.searchParams.set("since", String(options.since));
+    if (typeof options.limit === "number") url.searchParams.set("limit", String(options.limit));
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async getSessionFeed(
+    sessionId: string,
+    options: GetSessionFeedOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const url = new URL(`${this.baseUrl}/v1/sessions/${sessionId}/feed`);
+    if (typeof options.limit === "number") url.searchParams.set("limit", String(options.limit));
+    return this.requestJson(url.toString(), {
+      method: "GET",
+      retryable: true,
+      traceId: options.traceId,
+    });
+  }
+
+  async *listenSession(
+    sessionId: string,
+    options: ListenSessionOptions = {},
+  ): AsyncGenerator<Record<string, unknown>, void, void> {
+    const since = options.since ?? 0;
+    const waitSeconds = options.waitSeconds ?? 30;
+    const pollIntervalMs = options.pollIntervalMs ?? 1000;
+    const deadline = typeof options.timeoutMs === "number" ? Date.now() + options.timeoutMs : undefined;
+    let nextSince = since;
+
+    while (true) {
+      if (typeof deadline === "number" && Date.now() >= deadline) {
+        return;
+      }
+
+      let streamWaitSeconds = waitSeconds;
+      if (typeof deadline === "number") {
+        const msLeft = Math.max(0, deadline - Date.now());
+        if (msLeft <= 0) return;
+        streamWaitSeconds = Math.max(1, Math.min(waitSeconds, Math.floor(msLeft / 1000)));
+      }
+
+      try {
+        const streamedEvents = await this.fetchSessionFeedStream(sessionId, {
+          since: nextSince,
+          waitSeconds: streamWaitSeconds,
+          traceId: options.traceId,
+        });
+        for (const event of streamedEvents) {
+          const seq = typeof event.seq === "number" ? event.seq : 0;
+          if (seq > nextSince) nextSince = seq;
+          yield event;
+          if (event.type === "session.completed" || (typeof event.event === "string" && event.event === "session.completed")) {
+            return;
+          }
+        }
+      } catch (error) {
+        if (!(error instanceof AxmeHttpError) || ![404, 405, 501].includes(error.statusCode)) {
+          throw error;
+        }
+      }
+
+      // Fallback to polling if SSE not supported
+      const polled = await this.listSessionMessages(sessionId, {
+        since: nextSince > 0 ? nextSince : undefined,
+        traceId: options.traceId,
+      });
+      const messages = polled.messages;
+      if (!Array.isArray(messages) || messages.length === 0) {
+        if (typeof deadline === "number" && Date.now() >= deadline) return;
+        await delay(pollIntervalMs);
+        continue;
+      }
+      for (const msg of messages) {
+        if (!msg || typeof msg !== "object") continue;
+        const message = msg as Record<string, unknown>;
+        const seq = typeof message.seq === "number" ? message.seq : 0;
+        if (seq > nextSince) nextSince = seq;
+        yield { type: "session.message", ...message };
+      }
+    }
+  }
+
+  async completeSession(
+    sessionId: string,
+    options: CompleteSessionOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const payload: Record<string, unknown> = {};
+    if (options.result) payload.result = options.result;
+    return this.requestJson(`/v1/sessions/${sessionId}/complete`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      traceId: options.traceId,
+      retryable: false,
+    });
+  }
+
+  private async fetchSessionFeedStream(
+    sessionId: string,
+    options: {
+      since: number;
+      waitSeconds: number;
+      traceId?: string;
+    },
+  ): Promise<Array<Record<string, unknown>>> {
+    const streamUrl = new URL(`${this.baseUrl}/v1/sessions/${sessionId}/feed/stream`);
+    streamUrl.searchParams.set("since", String(options.since));
+    streamUrl.searchParams.set("wait_seconds", String(options.waitSeconds));
+
+    const response = await this.fetchImpl(streamUrl.toString(), {
+      method: "GET",
+      headers: this.buildHeaders(undefined, options.traceId),
+    });
+    if (!response.ok) {
+      throw await buildHttpError(response);
+    }
+    const body = await response.text();
+    return parseSessionSseEvents(body);
+  }
+
   private async fetchIntentEventStream(
     intentId: string,
     options: {
@@ -1870,6 +2088,10 @@ function parseIntentSseEvents(body: string): Array<Record<string, unknown>> {
 
 function parseAgentSseEvents(body: string): Array<Record<string, unknown>> {
   return parseSseEvents(body, (eventType) => eventType.startsWith("intent."));
+}
+
+function parseSessionSseEvents(body: string): Array<Record<string, unknown>> {
+  return parseSseEvents(body, (eventType) => eventType.startsWith("session.") || eventType.startsWith("stream."));
 }
 
 function parseSseEvents(

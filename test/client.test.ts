@@ -2134,6 +2134,176 @@ test("listen ignores stream.timeout keepalive events", async () => {
   assert.equal(results[0].intent_id, "real-1");
 });
 
+// ── Session API tests ─────────────────────────────────────────────────────────
+
+const SESSION_RESPONSE = {
+  ok: true,
+  session_id: "sess-1111",
+  status: "ACTIVE",
+  type: "task",
+  created_at: "2026-03-26T00:00:00Z",
+};
+
+test("createSession sends POST /v1/sessions with payload", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/sessions");
+      assert.equal(init?.method, "POST");
+      const body = JSON.parse(init?.body as string);
+      assert.equal(body.type, "task");
+      assert.equal(body.project_id, "/home/user/project");
+      assert.deepEqual(body.metadata, { agent: "claude-code" });
+      return new Response(JSON.stringify(SESSION_RESPONSE), { status: 200 });
+    },
+  );
+  const result = await client.createSession({
+    type: "task",
+    projectId: "/home/user/project",
+    metadata: { agent: "claude-code" },
+  });
+  assert.equal(result.session_id, "sess-1111");
+});
+
+test("getSession sends GET /v1/sessions/{id}", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/sessions/sess-1111");
+      assert.equal(init?.method, "GET");
+      return new Response(JSON.stringify({ ok: true, session: { session_id: "sess-1111", status: "ACTIVE" } }), { status: 200 });
+    },
+  );
+  const result = await client.getSession("sess-1111");
+  assert.equal((result.session as Record<string, unknown>).session_id, "sess-1111");
+});
+
+test("listSessions sends GET /v1/sessions with query params", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      const url = new URL(input.toString());
+      assert.equal(url.pathname, "/v1/sessions");
+      assert.equal(url.searchParams.get("status"), "ACTIVE");
+      assert.equal(url.searchParams.get("limit"), "10");
+      assert.equal(init?.method, "GET");
+      return new Response(JSON.stringify({ ok: true, sessions: [] }), { status: 200 });
+    },
+  );
+  await client.listSessions({ status: "ACTIVE", limit: 10 });
+});
+
+test("postSessionMessage sends POST with role and content", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/sessions/sess-1111/messages");
+      assert.equal(init?.method, "POST");
+      const body = JSON.parse(init?.body as string);
+      assert.equal(body.role, "user");
+      assert.equal(body.content, "hello");
+      assert.equal(body.content_type, "text");
+      return new Response(JSON.stringify({ ok: true, message_id: "msg-1", seq: 1 }), { status: 200 });
+    },
+  );
+  const result = await client.postSessionMessage("sess-1111", "user", "hello", { contentType: "text" });
+  assert.equal(result.seq, 1);
+});
+
+test("listSessionMessages sends GET with since and limit", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      const url = new URL(input.toString());
+      assert.equal(url.pathname, "/v1/sessions/sess-1111/messages");
+      assert.equal(url.searchParams.get("since"), "5");
+      assert.equal(url.searchParams.get("limit"), "20");
+      return new Response(JSON.stringify({ ok: true, messages: [{ seq: 6, role: "agent", content: "hi" }] }), { status: 200 });
+    },
+  );
+  const result = await client.listSessionMessages("sess-1111", { since: 5, limit: 20 });
+  assert.equal((result.messages as Array<Record<string, unknown>>).length, 1);
+});
+
+test("getSessionFeed sends GET /v1/sessions/{id}/feed", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      const url = new URL(input.toString());
+      assert.equal(url.pathname, "/v1/sessions/sess-1111/feed");
+      assert.equal(url.searchParams.get("limit"), "50");
+      return new Response(JSON.stringify({ ok: true, feed: [] }), { status: 200 });
+    },
+  );
+  await client.getSessionFeed("sess-1111", { limit: 50 });
+});
+
+test("completeSession sends POST /v1/sessions/{id}/complete", async () => {
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input, init) => {
+      assert.equal(input.toString(), "https://api.axme.test/v1/sessions/sess-1111/complete");
+      assert.equal(init?.method, "POST");
+      const body = JSON.parse(init?.body as string);
+      assert.deepEqual(body.result, { summary: "done" });
+      return new Response(JSON.stringify({ ok: true, session_id: "sess-1111", status: "COMPLETED" }), { status: 200 });
+    },
+  );
+  const result = await client.completeSession("sess-1111", { result: { summary: "done" } });
+  assert.equal(result.status, "COMPLETED");
+});
+
+test("listenSession yields events from SSE stream", async () => {
+  const sseBody = [
+    "event: session.message",
+    'data: {"type":"message","seq":1,"role":"agent","content":"hello"}',
+    "",
+    "event: session.completed",
+    'data: {"type":"session.completed","seq":2}',
+    "",
+  ].join("\n");
+
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input) => {
+      const url = new URL(input.toString());
+      if (url.pathname.endsWith("/feed/stream")) {
+        return new Response(sseBody, { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true, messages: [] }), { status: 200 });
+    },
+  );
+  const events = await collect(client.listenSession("sess-1111"));
+  assert.equal(events.length, 2);
+  assert.equal(events[0].role, "agent");
+  assert.equal(events[1].type, "session.completed");
+});
+
+test("listenSession falls back to polling when SSE returns 404", async () => {
+  let pollCount = 0;
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (input) => {
+      const url = new URL(input.toString());
+      if (url.pathname.endsWith("/feed/stream")) {
+        return new Response("Not Found", { status: 404 });
+      }
+      pollCount++;
+      if (pollCount === 1) {
+        return new Response(JSON.stringify({ ok: true, messages: [{ seq: 1, role: "agent", content: "polled" }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true, messages: [] }), { status: 200 });
+    },
+  );
+  const events: Record<string, unknown>[] = [];
+  for await (const ev of client.listenSession("sess-1111", { timeoutMs: 100, pollIntervalMs: 10 })) {
+    events.push(ev);
+    if (events.length >= 1) break;
+  }
+  assert.equal(events.length, 1);
+  assert.equal(events[0].content, "polled");
+});
+
 // ── helpers (local) ───────────────────────────────────────────────────────────
 
 async function collect<T>(gen: AsyncGenerator<T>): Promise<T[]> {
