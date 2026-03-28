@@ -14,6 +14,8 @@
 npm install @axme/axme
 ```
 
+Requires Node.js 20+.
+
 ---
 
 ## Quick Start
