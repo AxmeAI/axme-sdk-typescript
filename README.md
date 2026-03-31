@@ -85,6 +85,19 @@ for await (const event of client.observe(intent.intent_id)) {
 
 ---
 
+## Agent Mesh - Monitor and Govern
+
+Agent Mesh gives every agent real-time health monitoring, policy enforcement, and a kill switch - all from a single dashboard.
+
+```typescript
+client.mesh.startHeartbeat()
+client.mesh.reportMetric({ success: true, latencyMs: 230, costUsd: 0.02 })
+```
+
+Set action policies (allowlist/denylist intent types) and cost policies (intents/day, $/day limits) per agent via dashboard or API. Mesh module coming soon to this SDK - [Python SDK](https://github.com/AxmeAI/axme-sdk-python) available now. [Full overview](https://github.com/AxmeAI/axme#agent-mesh---see-and-control-your-agents).
+
+---
+
 ## Examples
 
 ```bash
