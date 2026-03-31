@@ -5,6 +5,7 @@ import {
   AxmeServerError,
   AxmeValidationError,
 } from "./errors.js";
+import { MeshClient } from "./mesh.js";
 
 export type AxmeClientConfig = {
   baseUrl?: string;
@@ -190,6 +191,15 @@ export class AxmeClient {
   private readonly mcpObserver?: (event: McpObserverEvent) => void;
   private readonly mcpToolSchemas: Record<string, Record<string, unknown>>;
   private readonly fetchImpl: typeof fetch;
+  private _mesh: MeshClient | null = null;
+
+  /** Access Agent Mesh operations (heartbeat, health, kill switch). */
+  get mesh(): MeshClient {
+    if (this._mesh === null) {
+      this._mesh = new MeshClient(this);
+    }
+    return this._mesh;
+  }
 
   constructor(config: AxmeClientConfig, fetchImpl: typeof fetch = fetch) {
     if (config.actorToken && config.bearerToken && config.actorToken !== config.bearerToken) {
