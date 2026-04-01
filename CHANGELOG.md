@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.2.0] - 2026-04-01
+
+### Added
+- **Agent Mesh module** - MeshClient with heartbeat, startHeartbeat, stopHeartbeat, reportMetric, listAgents, getAgent, kill, resume, listEvents
+- Mesh module wired as `client.mesh` property (lazy init)
+- Dashboard URL: mesh.axme.ai
+
 ## 0.1.2 (2026-03-18)
 
 ### Bug Fixes

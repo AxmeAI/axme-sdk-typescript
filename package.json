@@ -1,6 +1,6 @@
 {
   "name": "@axme/axme",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Official TypeScript SDK for Axme APIs.",
   "type": "module",
   "main": "./dist/src/index.js",
