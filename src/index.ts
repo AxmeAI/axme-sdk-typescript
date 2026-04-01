@@ -39,3 +39,12 @@ export {
   AxmeServerError,
   AxmeValidationError,
 } from "./errors.js";
+export {
+  MeshClient,
+  type MeshMetric,
+  type MeshAgent,
+  type MeshAgentsResponse,
+  type MeshEvent,
+  type ListAgentsOptions,
+  type ListEventsOptions,
+} from "./mesh.js";

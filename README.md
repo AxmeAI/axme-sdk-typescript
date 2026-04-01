@@ -85,6 +85,31 @@ for await (const event of client.observe(intent.intent_id)) {
 
 ---
 
+## Agent Mesh - Monitor and Govern
+
+```typescript
+// Start heartbeat - agent appears in dashboard with live health
+client.mesh.startHeartbeat(); // background interval, every 30s
+
+// Report metrics after each task
+client.mesh.reportMetric({ success: true, latencyMs: 230, costUsd: 0.02 });
+
+// List all agents with health status
+const agents = await client.mesh.listAgents();
+
+// Kill a misbehaving agent - blocks all intents instantly
+await client.mesh.kill("addr_...");
+
+// Resume it
+await client.mesh.resume("addr_...");
+```
+
+Open the live dashboard at [mesh.axme.ai](https://mesh.axme.ai) or run `axme mesh dashboard` from the CLI.
+
+Set action policies (allowlist/denylist intent types) and cost policies (intents/day, $/day limits) per agent via dashboard or API. [Agent Mesh overview](https://github.com/AxmeAI/axme#agent-mesh---see-and-control-your-agents).
+
+---
+
 ## Examples
 
 ```bash
