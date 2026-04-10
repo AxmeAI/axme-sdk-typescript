@@ -1,3 +1,4 @@
+export { SDK_VERSION } from "./version.js";
 export {
   AxmeClient,
   type AxmeClientConfig,
