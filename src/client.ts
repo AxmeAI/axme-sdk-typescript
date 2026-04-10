@@ -6,6 +6,7 @@ import {
   AxmeValidationError,
 } from "./errors.js";
 import { MeshClient } from "./mesh.js";
+import { SDK_VERSION } from "./version.js";
 
 export type AxmeClientConfig = {
   baseUrl?: string;
@@ -1921,6 +1922,7 @@ export class AxmeClient {
     const headers: Record<string, string> = {
       "x-api-key": this.apiKey,
       "Content-Type": "application/json",
+      "X-Axme-Client": `axme-sdk-typescript/${SDK_VERSION}`,
     };
     if (this.actorToken) {
       headers.Authorization = `Bearer ${this.actorToken}`;

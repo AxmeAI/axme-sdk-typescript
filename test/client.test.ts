@@ -50,6 +50,19 @@ test("health returns parsed payload", async () => {
   assert.deepEqual(await client.health(), { ok: true });
 });
 
+test("health sends X-Axme-Client header", async () => {
+  const { SDK_VERSION } = await import("../src/version.js");
+  const client = new AxmeClient(
+    { baseUrl: "https://api.axme.test", apiKey: "token" },
+    async (_input, init) => {
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["X-Axme-Client"], `axme-sdk-typescript/${SDK_VERSION}`);
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    },
+  );
+  await client.health();
+});
+
 test("health includes actor token authorization when configured", async () => {
   const client = new AxmeClient(
     {
